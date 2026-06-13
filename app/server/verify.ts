@@ -18,6 +18,7 @@ import {
   type Address, type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { underwrite } from "./underwrite";
 
 const PASSPORT_ABI = [
   { type: "function", name: "verifyAndMint", stateMutability: "nonpayable", inputs: [{ name: "signal", type: "address" }, { name: "root", type: "uint256" }, { name: "nullifierHash", type: "uint256" }, { name: "proof", type: "uint256[8]" }], outputs: [] },
@@ -34,8 +35,6 @@ const REGISTRY_ABI = [
 const VAULT_ABI = [{ type: "function", name: "claim", stateMutability: "nonpayable", inputs: [], outputs: [] }] as const;
 
 const WORLD_API = (base?: string) => base || "https://developer.worldcoin.org";
-const DEMO_PRINCIPAL = 5_000_000n; // $5, 6dp — small so many demo humans can be funded
-const DEMO_APR_BPS = 1000;
 
 interface Env {
   APP_ID?: `app_${string}`;
@@ -47,6 +46,8 @@ interface Env {
   VAULT?: Address;
   RPC: string;
   WORLD_API_BASE?: string;
+  CONF_AI_URL?: string; // Confidential AI inference endpoint (TEE); unset → local policy
+  CONF_AI_KEY?: string;
 }
 function readEnv(env: Record<string, string>): Env {
   return {
@@ -59,6 +60,8 @@ function readEnv(env: Record<string, string>): Env {
     VAULT: env.VITE_LOAN_VAULT_ADDRESS as Address | undefined,
     RPC: env.VITE_ARC_RPC_URL || "http://127.0.0.1:8545",
     WORLD_API_BASE: env.WORLD_API_BASE,
+    CONF_AI_URL: env.CONFIDENTIAL_AI_API_URL,
+    CONF_AI_KEY: env.CONFIDENTIAL_AI_API_KEY,
   };
 }
 const arc = (rpc: string) =>
@@ -114,22 +117,31 @@ export function createSigninHandler(raw: Record<string, string>) {
 
       const existing = (await pub.readContract({ address: env.PASSPORT, abi: PASSPORT_ABI, functionName: "passportIdOf", args: [wallet] })) as Hex;
       const fresh = /^0x0+$/.test(existing);
+      // Tx hashes + the attested verdict ref, surfaced to the UI's demo-state panel (Phase 5).
+      let mintTx: Hex | undefined;
+      let setTermsTx: Hex | undefined;
+      let attestationRef: Hex | undefined;
       if (fresh) {
         const empty = [0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n] as const;
-        const mintTx = await relayer.writeContract({ address: env.PASSPORT, abi: PASSPORT_ABI, functionName: "verifyAndMint", args: [wallet, 0n, BigInt(sessionNullifier), empty] });
+        mintTx = await relayer.writeContract({ address: env.PASSPORT, abi: PASSPORT_ABI, functionName: "verifyAndMint", args: [wallet, 0n, BigInt(sessionNullifier), empty] });
         await pub.waitForTransactionReceipt({ hash: mintTx });
         const passportId = (await pub.readContract({ address: env.PASSPORT, abi: PASSPORT_ABI, functionName: "passportIdOf", args: [wallet] })) as Hex;
+        // Phase 3: the real underwriter sets the terms (Confidential AI verdict, or local policy).
+        const decision = await underwrite(wallet, { confAiUrl: env.CONF_AI_URL, confAiKey: env.CONF_AI_KEY });
+        attestationRef = decision.attestationRef;
         const expiry = BigInt(Math.floor(Date.now() / 1000) + 30 * 24 * 3600);
-        await relayer.writeContract({ address: env.REGISTRY, abi: REGISTRY_ABI, functionName: "setTerms", args: [{ borrower: wallet, passportId, principal: DEMO_PRINCIPAL, aprBps: DEMO_APR_BPS, riskBand: 1, attestationRef: keccak256(concat(["0x01", wallet])) , expiry, approved: true }] });
+        setTermsTx = await relayer.writeContract({ address: env.REGISTRY, abi: REGISTRY_ABI, functionName: "setTerms", args: [{ borrower: wallet, passportId, principal: decision.principal, aprBps: decision.aprBps, riskBand: decision.riskBand, attestationRef: decision.attestationRef, expiry, approved: decision.approved }] });
+        await pub.waitForTransactionReceipt({ hash: setTermsTx });
       }
 
       const report = (await pub.readContract({ address: env.PASSPORT, abi: PASSPORT_ABI, functionName: "creditReport", args: [wallet] })) as { passportId: Hex; standing: number; limit: bigint; score: number; onTimePayments: number; latePayments: number; defaults: number };
-      const terms = (await pub.readContract({ address: env.REGISTRY, abi: REGISTRY_ABI, functionName: "getTerms", args: [wallet] })) as { principal: bigint; aprBps: number; approved: boolean };
+      const terms = (await pub.readContract({ address: env.REGISTRY, abi: REGISTRY_ABI, functionName: "getTerms", args: [wallet] })) as { principal: bigint; aprBps: number; approved: boolean; attestationRef: Hex };
 
       return json(res, 200, {
         ok: true, wallet, sessionNullifier,
         passport: { id: report.passportId, standing: report.standing, limit: report.limit.toString(), score: report.score, onTimePayments: report.onTimePayments, latePayments: report.latePayments, defaults: report.defaults },
         terms: { principal: terms.principal.toString(), aprBps: terms.aprBps, approved: terms.approved },
+        receipts: { mintTx, setTermsTx, attestationRef: attestationRef ?? terms.attestationRef },
       });
     } catch (e) {
       return json(res, 500, { ok: false, error: errMsg(e) });

@@ -3,15 +3,35 @@ import { IDKitSessionWidget, CredentialRequest, type IDKitResult } from "@worldc
 import { formatUnits } from "viem";
 
 const APP_ID = import.meta.env.VITE_WORLD_APP_ID as `app_${string}` | undefined;
+const RPC = (import.meta.env.VITE_ARC_RPC_URL as string) || "";
+const IS_LOCAL = /127\.0\.0\.1|localhost/.test(RPC);
 const SESSION_KEY = "vouch.session_id";
 const STANDING = ["Unverified", "Good", "Late", "Defaulted", "Locked out"];
 
 type RpContext = { rp_id: string; nonce: string; created_at: number; expires_at: number; signature: string };
 type Passport = { id: string; standing: number; limit: string; score: number; onTimePayments: number; latePayments: number; defaults: number };
 type Terms = { principal: string; aprBps: number; approved: boolean };
-type SignedIn = { wallet: string; sessionNullifier: string; passport: Passport; terms: Terms };
+type Receipts = { mintTx?: string; setTermsTx?: string; attestationRef?: string };
+type SignedIn = { wallet: string; sessionNullifier: string; passport: Passport; terms: Terms; receipts?: Receipts };
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+
+/// A tx-hash / hash row that links to Arcscan on testnet (local hashes are shown but not linked).
+function Hashed({ label, value, isTx }: { label: string; value?: string; isTx?: boolean }) {
+  if (!value) return null;
+  const href = isTx && !IS_LOCAL ? `https://testnet.arcscan.app/tx/${value}` : undefined;
+  return (
+    <li>
+      {label}:{" "}
+      {href ? (
+        <a className="tlink" href={href} target="_blank" rel="noreferrer"><code>{short(value)}</code></a>
+      ) : (
+        <code>{short(value)}</code>
+      )}
+      {isTx && IS_LOCAL ? <span className="muted"> (local)</span> : null}
+    </li>
+  );
+}
 
 /// Identity-first borrow flow: Sign in with World ID (a *session* — repeatable, no re-verify wall).
 /// The server identifies the human, provisions a custodial wallet for them, mints/loads the passport,
@@ -108,8 +128,23 @@ export function BorrowFlow() {
           <button className="btn btn--primary" style={{ marginTop: 14 }} disabled={!me.terms.approved || claim.pending || Boolean(claim.tx)} onClick={doClaim}>
             {claim.pending ? "Claiming…" : claim.tx ? "Claimed ✓" : "Claim advance"}
           </button>
-          {claim.tx && <p className="muted">tx: <code>{claim.tx}</code></p>}
           {claim.error && <p className="error">{claim.error}</p>}
+        </div>
+
+        {/* Phase 5 — demo state: the on-chain proof that this flow is real, not staged. */}
+        <div className="passport-card" style={{ marginTop: 16 }}>
+          <strong>On-chain receipts</strong>
+          <ul className="credit-report muted">
+            <Hashed label="Passport id" value={p.id} />
+            <Hashed label="Human nullifier" value={me.sessionNullifier} />
+            <Hashed label="Attestation ref" value={me.receipts?.attestationRef} />
+            <Hashed label="Passport mint" value={me.receipts?.mintTx} isTx />
+            <Hashed label="Terms set (verdict)" value={me.receipts?.setTermsTx} isTx />
+            <Hashed label="Claim / disburse" value={claim.tx} isTx />
+          </ul>
+          <p className="muted">
+            {IS_LOCAL ? "Local devnet — hashes are real on-chain locally." : "Live on Arc — open any hash on Arcscan."}
+          </p>
         </div>
       </section>
     );
