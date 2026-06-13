@@ -8,7 +8,8 @@ export const config = createConfig({
   chains: [arcTestnet, baseSepolia, sepolia],
   connectors: [injected()],
   transports: {
-    [arcTestnet.id]: http("https://rpc.testnet.arc.network"),
+    // VITE_ARC_RPC_URL lets the local devnet point this at anvil; defaults to live Arc testnet.
+    [arcTestnet.id]: http((import.meta as { env?: Record<string, string> }).env?.VITE_ARC_RPC_URL || "https://rpc.testnet.arc.network"),
     [baseSepolia.id]: http(),
     [sepolia.id]: http(),
   },

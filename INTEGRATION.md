@@ -45,10 +45,12 @@ deterministic local policy (band→APR, per-human) so the full flow runs without
 attestationRef, and the passport-mint / terms-set / claim tx hashes — each linking to Arcscan on
 testnet (labelled "(local)" on the devnet). Mirrors the lender app's hash/Arcscan pattern.
 
-## Config unification (Phase 4)
-One address set feeds all three surfaces. Extend `scripts/devnet.sh` / `SetupLocal.s.sol` to also
-write `metamask-lender/.env` and the underwriter `config.*.json` alongside `app/.env`
-(LoanRegistry, LoanVault, TranchePool, PassportRegistry, USDC, RPC).
+## Config unification (Phase 4 — DONE)
+`scripts/devnet.sh` now derives `metamask-lender/.env` + `underwriter-layer/cre-workflow/config.local.json`
+from `app/.env` after `SetupLocal` runs — one source of truth. The lender app
+(`metamask-lender/src/web3/{config,contracts}.ts`) reads `VITE_ARC_RPC_URL` / `VITE_TRANCHE_POOL_ADDRESS`
+/ `VITE_USDC_ADDRESS` with the live Arc-testnet deployment as fallback, so local devnet and live
+deploy both work without code edits.
 
 ## New env (borrower server)
 `CONFIDENTIAL_AI_API_URL` / `CONFIDENTIAL_AI_API_KEY` in `app/.env.local` → switches `underwrite()`
