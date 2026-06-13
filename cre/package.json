@@ -1,0 +1,23 @@
+{
+  "name": "@vouch/cre",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Vouch Stage 3 — Chainlink CRE decision-layer workflow (HTTP trigger -> Confidential AI underwrite -> DON consensus -> EVM Write setTerms via Forwarder). Runs locally as a simulation/mock.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test --experimental-strip-types test/*.test.ts",
+    "sim": "node --experimental-strip-types src/sim.ts"
+  },
+  "dependencies": {
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}

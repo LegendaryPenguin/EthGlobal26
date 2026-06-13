@@ -1,0 +1,16 @@
+[package]
+name = "vouch_eligibility"
+type = "bin"
+authors = ["Vouch"]
+# Pin a recent Noir compiler. Bump to match the `nargo --version` your team installs.
+# See: https://noir-lang.org/docs/getting_started/quick_start
+compiler_version = ">=1.0.0"
+
+[dependencies]
+# No external deps: we use only std::hash::pedersen_hash and compute the Merkle
+# root inline, so the circuit compiles cleanly to R1CS for ProveKit
+# (WHIR/Groth16) without a registry fetch. (Poseidon and std::merkle were moved
+# out of the Noir stdlib in 1.0; add a poseidon lib here to switch hashes.)
+# TODO(provekit): if a real signed credential is added, pull in an EdDSA/ECDSA
+#   verification lib here (e.g. a Noir signature crate compatible with the
+#   chosen credential issuer's curve).

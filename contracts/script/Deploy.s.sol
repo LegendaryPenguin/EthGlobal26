@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Script, console2} from "forge-std/Script.sol";
 import {LoanRegistry} from "../src/LoanRegistry.sol";
 import {LoanVault} from "../src/LoanVault.sol";
+import {IncomeRouter} from "../src/IncomeRouter.sol";
 
 /// @notice Stage 1/2 deploy on Arc Testnet (chain id 5042002, Golden Rule #3).
 /// @dev    Run:
@@ -24,12 +25,16 @@ contract Deploy is Script {
         vm.startBroadcast();
 
         LoanRegistry registry = new LoanRegistry(forwarder);
-        LoanVault vault = new LoanVault(address(registry), usdc);
+        // Deploy the vault with router unset, then wire the router (circular reference).
+        LoanVault vault = new LoanVault(address(registry), usdc, address(0));
+        IncomeRouter router = new IncomeRouter(address(vault), usdc);
+        vault.setRouter(address(router));
 
         vm.stopBroadcast();
 
         console2.log("LoanRegistry:", address(registry));
         console2.log("LoanVault:   ", address(vault));
+        console2.log("IncomeRouter:", address(router));
         console2.log("Forwarder:   ", forwarder);
         console2.log("USDC:        ", usdc);
     }
