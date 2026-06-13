@@ -147,8 +147,13 @@ contract Stage8DefaultTest is Test {
         // Reputation healed Late → Good, score bumped, limit laddered up by INITIAL_LIMIT/2 ($250).
         assertEq(uint8(passport.standingOf(tunde)), uint8(PassportRegistry.Standing.Good), "healed to Good");
         assertEq(passport.limitOf(tunde), limitBefore + passport.INITIAL_LIMIT() / 2, "limit laddered up");
-        (, , , uint32 score) = passport.passports(NULLIFIER);
+        (, , , uint32 score, , ,) = passport.passports(NULLIFIER);
         assertEq(score, passport.REPAYMENT_SCORE_BUMP(), "score bumped (started 0, late penalty floored at 0)");
+        // Credit history attached to the human: this run had 1 late then a full repayment.
+        PassportRegistry.CreditReport memory cr = passport.creditReport(tunde);
+        assertEq(cr.onTimePayments, 1, "one loan repaid in full");
+        assertEq(cr.latePayments, 1, "one late mark recorded");
+        assertEq(cr.defaults, 0, "no defaults");
     }
 
     function test_fullRepaymentNoPassportIsNoop() public {

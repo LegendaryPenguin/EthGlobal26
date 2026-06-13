@@ -28,6 +28,22 @@ contract PassportRegistry {
         Standing standing;
         uint256 limit; // current credit limit, USDC 6 decimals
         uint32 score;
+        uint32 onTimePayments; // loans fully repaid (credit history, bound to the human)
+        uint32 latePayments; // times marked late
+        uint32 defaults; // times defaulted / locked out
+    }
+
+    /// @notice A portable, person-bound credit report any lender can poll by wallet. Because it is
+    ///         keyed by the World ID human (not the wallet), every wallet of the same human returns the
+    ///         same report — reputation that travels across lenders (the ERC-8004 thesis).
+    struct CreditReport {
+        bytes32 passportId;
+        Standing standing;
+        uint256 limit; // USDC, 6 decimals
+        uint32 score;
+        uint32 onTimePayments;
+        uint32 latePayments;
+        uint32 defaults;
     }
 
     /// @dev Default starting limit for a freshly verified human (USDC, 6 decimals). Ladders up
@@ -130,6 +146,27 @@ contract PassportRegistry {
         return passports[walletToHuman[wallet]].id;
     }
 
+    /// @notice The human's credit score (bound to personhood, shared across their wallets).
+    function scoreOf(address wallet) external view returns (uint32) {
+        return passports[walletToHuman[wallet]].score;
+    }
+
+    /// @notice Poll a human's full, portable credit report by any of their wallets. Returns a zeroed
+    ///         report (passportId == 0) if the wallet has no passport. Any lender can call this — the
+    ///         reputation is bound to the person, not the wallet.
+    function creditReport(address wallet) external view returns (CreditReport memory) {
+        Passport storage p = passports[walletToHuman[wallet]];
+        return CreditReport({
+            passportId: p.id,
+            standing: p.standing,
+            limit: p.limit,
+            score: p.score,
+            onTimePayments: p.onTimePayments,
+            latePayments: p.latePayments,
+            defaults: p.defaults
+        });
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Reputation updates (repayment outcomes / default-state transitions)
     // ─────────────────────────────────────────────────────────────────────────
@@ -187,6 +224,7 @@ contract PassportRegistry {
         if (p.id == bytes32(0)) return; // no passport → nothing to ding
         if (p.standing != Standing.Good) return; // only the Good → Late edge transitions
         p.standing = Standing.Late;
+        p.latePayments += 1; // credit history: another late mark on this human
         p.score = p.score > LATE_SCORE_PENALTY ? p.score - LATE_SCORE_PENALTY : 0;
         emit StandingUpdated(nullifierHash, p.standing, p.score, p.limit);
     }
@@ -198,6 +236,7 @@ contract PassportRegistry {
         uint256 nullifierHash = walletToHuman[wallet];
         Passport storage p = passports[nullifierHash];
         if (p.id == bytes32(0)) return; // no passport → nothing to lock
+        if (p.standing != Standing.LockedOut) p.defaults += 1; // count the first lock-out only
         p.standing = Standing.LockedOut;
         p.score = 0;
         p.limit = 0;
@@ -217,6 +256,7 @@ contract PassportRegistry {
         if (p.id == bytes32(0)) return; // no passport → nothing to heal
         if (p.standing == Standing.LockedOut || p.standing == Standing.Defaulted) return; // needs cure, not heal
         p.standing = Standing.Good; // heals Late → Good (and keeps Good as Good)
+        p.onTimePayments += 1; // credit history: another loan repaid in full
         p.score = p.score + REPAYMENT_SCORE_BUMP;
         p.limit = p.limit + (INITIAL_LIMIT / 2); // ladder up by a flat +$250 step
         emit StandingUpdated(nullifierHash, p.standing, p.score, p.limit);
