@@ -1,0 +1,8 @@
+{
+  "borrower_wallet": "0x1234567890abcdef1234567890abcdef12345678",
+  "wallet_addresses": [
+    "0x1234567890abcdef1234567890abcdef12345678",
+    "0x9876543210fedcba9876543210fedcba98765432"
+  ],
+  "encrypted_identity_blob": "eyJ3b3JsZF9pZF9udWxsaWZpZXIiOiIweDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDBhYmMxMjMiLCJ6a19lbGlnaWJpbGl0eV9wcm9vZl92YWxpZCI6dHJ1ZSwiYWdlIjoyNywiY291bnRyeSI6Ik5HIiwib2NjdXBhdGlvbiI6ImZyZWVsYW5jZSBzb2Z0d2FyZSBkZXZlbG9wZXIiLCJzZWxmX3JlcG9ydGVkX3llYXJseV9pbmNvbWVfdXNkIjoxODAwMH0="
+}
