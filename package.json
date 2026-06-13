@@ -1,0 +1,14 @@
+{
+  "name": "vouch",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Vouch — a credit passport. Personhood is the collateral, underwriting is private, dollars move on Arc.",
+  "workspaces": [
+    "cre",
+    "app",
+    "scripts"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}
