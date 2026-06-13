@@ -132,9 +132,8 @@ contract SetupLocal is Script {
         env = string.concat(env, "VITE_TRANCHE_POOL_ADDRESS=", vm.toString(address(pool)), "\n");
         env = string.concat(env, "VITE_PASSPORT_REGISTRY_ADDRESS=", vm.toString(address(passport)), "\n");
         env = string.concat(env, "VITE_USDC_ADDRESS=", vm.toString(address(usdc)), "\n");
-        env = string.concat(env, "VITE_WORLD_APP_ID=\n");
-        env = string.concat(env, "VITE_WORLD_ACTION_ID=mint-credit-passport\n");
         env = string.concat(env, "VITE_ARC_RPC_URL=http://127.0.0.1:8545\n");
+        env = string.concat(env, "# World ID config (VITE_WORLD_APP_ID, action, RELAYER_PRIVATE_KEY) lives in app/.env.local.\n");
         vm.writeFile("../app/.env", env);
     }
 
