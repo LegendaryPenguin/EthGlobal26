@@ -4,6 +4,11 @@ pragma solidity ^0.8.24;
 import {ILoanRegistry} from "./interfaces/ILoanRegistry.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
 
+/// @dev Minimal view the vault needs to gate disbursement on personhood + good standing (Stage 4).
+interface IPassportGate {
+    function isInGoodStanding(address wallet) external view returns (bool);
+}
+
 /// @title LoanVault (Arc) — the money layer.
 /// @notice Holds pooled USDC; on a borrower's claim, checks `getTerms` + a valid attestation,
 ///         then disburses. Tracks per-loan balance + a fixed-term, equal-installment amortization
@@ -26,6 +31,11 @@ contract LoanVault {
     IERC20 public immutable usdc;
     address public router;
     address public owner;
+
+    /// @dev Optional World ID passport gate (Stage 4). When set, claim() requires the borrower's
+    ///      human to be in good standing — the anti-respawn check. address(0) disables it (e.g. for
+    ///      early money-layer tests); production deploys MUST set it.
+    address public passportRegistry;
 
     uint256 public constant TERM_DAYS = 30;
     uint256 public constant INSTALLMENTS = 4;
@@ -63,6 +73,7 @@ contract LoanVault {
     error AlreadyRepaid();
     error ZeroAmount();
     error ZeroRouter();
+    error NotInGoodStanding();
 
     event RouterUpdated(address indexed previousRouter, address indexed newRouter);
 
@@ -112,6 +123,11 @@ contract LoanVault {
         if (t.attestationRef == bytes32(0)) revert MissingAttestation();
         if (t.principal == 0) revert ZeroPrincipal();
         if (loans[msg.sender].disbursed) revert AlreadyDisbursed();
+
+        // Stage 4 anti-respawn gate: a verified human in good standing. Skipped only when unset.
+        if (passportRegistry != address(0) && !IPassportGate(passportRegistry).isInGoodStanding(msg.sender)) {
+            revert NotInGoodStanding();
+        }
 
         uint256 totalRepayable = _totalRepayable(t.principal, t.aprBps);
         uint256 installment = _ceilDiv(totalRepayable, INSTALLMENTS);
@@ -198,6 +214,11 @@ contract LoanVault {
         if (_router == address(0)) revert ZeroRouter();
         emit RouterUpdated(router, _router);
         router = _router;
+    }
+
+    /// @notice Set/rotate the World ID passport gate (Stage 4). Owner-only. address(0) disables it.
+    function setPassportRegistry(address _passportRegistry) external onlyOwner {
+        passportRegistry = _passportRegistry;
     }
 
     // ─────────────────────────────────────────────────────────────────────────

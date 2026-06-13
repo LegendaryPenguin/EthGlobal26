@@ -1,1 +1,0 @@
-{"root":["./src/app.tsx","./src/main.tsx","./src/wagmi.ts","./src/abis/loanregistry.ts","./src/components/borrowtab.tsx","./src/components/earntab.tsx","./src/components/payouttab.tsx","./src/components/walletbar.tsx"],"version":"5.9.3"}

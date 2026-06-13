@@ -1,9 +1,12 @@
 import { useAccount, useReadContract, useWriteContract } from "wagmi";
 import { formatUnits, type Address } from "viem";
 import { loanRegistryAbi, loanVaultAbi } from "../abis/loanRegistry";
+import { passportRegistryAbi, STANDING_LABELS } from "../abis/passportRegistry";
+import { WorldIdVerify } from "./WorldIdVerify";
 
 const LOAN_REGISTRY = import.meta.env.VITE_LOAN_REGISTRY_ADDRESS as Address | undefined;
 const LOAN_VAULT = import.meta.env.VITE_LOAN_VAULT_ADDRESS as Address | undefined;
+const PASSPORT = import.meta.env.VITE_PASSPORT_REGISTRY_ADDRESS as Address | undefined;
 
 /// The documented borrow flow (docs/02 + docs/06). Steps gated by later stages are labelled with
 /// the stage that delivers them; the live wiring here is the read of the LoanRegistry seam.
@@ -18,6 +21,14 @@ export function BorrowTab() {
     query: { enabled: Boolean(LOAN_REGISTRY && address) },
   });
 
+  const { data: standing } = useReadContract({
+    address: PASSPORT,
+    abi: passportRegistryAbi,
+    functionName: "standingOf",
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(PASSPORT && address) },
+  });
+
   const { writeContract, isPending, data: txHash, error } = useWriteContract();
 
   const approved = terms?.approved ?? false;
@@ -28,8 +39,14 @@ export function BorrowTab() {
       <ol className="flow">
         <li>
           <strong>1 · Verify you're a unique human</strong> — World ID, validated on-chain.
-          <span className="stage">Stage 4</span>
           <p className="muted">Mints/locks one ERC-8004 passport per human. Anti-respawn.</p>
+          {PASSPORT && address && (
+            <p className="muted">
+              Passport standing:{" "}
+              <strong>{STANDING_LABELS[Number(standing ?? 0)] ?? "Unknown"}</strong>
+            </p>
+          )}
+          <WorldIdVerify />
         </li>
         <li>
           <strong>2 · Prove eligibility privately</strong> — Noir proof (income ≥ threshold) in your
