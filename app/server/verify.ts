@@ -182,6 +182,12 @@ export function createClaimHandler(raw: Record<string, string>) {
 
 function errMsg(e: unknown) { return e instanceof Error ? e.message : String(e); }
 function readJson(req: IncomingMessage): Promise<unknown> {
+  // Vercel (and some hosts) pre-parse the body onto req.body; Vite dev + the standalone server give a
+  // raw stream. Support both so the same handlers run everywhere.
+  const pre = (req as { body?: unknown }).body;
+  if (pre !== undefined && pre !== null && pre !== "") {
+    return Promise.resolve(typeof pre === "string" ? JSON.parse(pre) : pre);
+  }
   return new Promise((resolve, reject) => {
     let d = "";
     req.on("data", (c) => (d += c));

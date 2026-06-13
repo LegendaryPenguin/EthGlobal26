@@ -28,7 +28,31 @@ scripts/deploy-arc.sh
 This deploys all contracts, **seeds the TranchePool and deploys that capital into the LoanVault**
 (so loans are funded by the pool), and writes `app/.env.production` + `metamask-lender/.env.production`.
 
-## Step 2 — host the two links
+## Step 2 — host the two links (Vercel — recommended)
+
+Two Vercel projects from this one repo (set each project's **Root Directory** in the dashboard):
+
+**Borrower** — Root Directory `app`. Vercel auto-detects Vite; `app/api/world/*.ts` deploy as
+serverless functions (the World ID + relayer endpoints — config in `app/vercel.json`). Set env vars
+in the Vercel project (Settings → Environment Variables):
+- Public (inlined at build): `VITE_WORLD_APP_ID`, `VITE_WORLD_RP_ID`, `VITE_WORLD_ACTION_ID`,
+  `VITE_ARC_RPC_URL`, `VITE_USDC_ADDRESS`, `VITE_LOAN_REGISTRY_ADDRESS`, `VITE_LOAN_VAULT_ADDRESS`,
+  `VITE_INCOME_ROUTER_ADDRESS`, `VITE_TRANCHE_POOL_ADDRESS`, `VITE_PASSPORT_REGISTRY_ADDRESS`
+- Secret (runtime only — NOT `VITE_`, so never bundled into the browser): `WORLD_RP_SIGNING_KEY`,
+  `RELAYER_PRIVATE_KEY` (the relayer must be the LoanRegistry forwarder AND funded with Arc gas).
+- Copy these from your local `app/.env.local` (already filled in).
+
+**Lender** — Root Directory `metamask-lender`. Pure static Vite (`metamask-lender/vercel.json`). Env
+(optional — it has live-Arc fallbacks baked in): `VITE_ARC_RPC_URL`, `VITE_TRANCHE_POOL_ADDRESS`,
+`VITE_USDC_ADDRESS`.
+
+That's your two public links. Pushes to the repo auto-deploy (preview per branch, prod on the
+default branch) — easy to iterate. The contracts are already live, so the links work immediately.
+
+> The same handlers also run under `vite dev` (local) and the host-agnostic `npm run serve` — so you
+> can develop locally and ship to Vercel with no code change (`readJson` accepts both raw + parsed bodies).
+
+## Step 2b — alternative hosts
 - **Borrower** (`app/`) needs a **Node host** (Render / Railway / Fly / a VM) because the World ID +
   relayer logic runs server-side:
   ```bash
