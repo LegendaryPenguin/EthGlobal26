@@ -1,11 +1,16 @@
 import { useState } from "react";
-import { IDKitRequestWidget, proofOfHuman, type IDKitResult } from "@worldcoin/idkit";
+import { IDKitRequestWidget, proofOfHuman, identityCheck, type IDKitResult } from "@worldcoin/idkit";
 import { useAccount, useReadContract } from "wagmi";
 import type { Address } from "viem";
 import { passportRegistryAbi, STANDING_LABELS } from "../abis/passportRegistry";
 
 const APP_ID = import.meta.env.VITE_WORLD_APP_ID as `app_${string}` | undefined;
 const ACTION = (import.meta.env.VITE_WORLD_ACTION_ID as string) || "mint-credit-passport";
+// Optional eligibility gate (#3): require a unique human who is ALSO this age via a World ID 4.0
+// document credential — proven privately (no birthdate revealed). 0/unset = uniqueness only (default,
+// works for any verified phone). Set VITE_WORLD_MIN_AGE=18 to require it (needs a document-verified
+// World App: passport/eID).
+const MIN_AGE = Number(import.meta.env.VITE_WORLD_MIN_AGE) || 0;
 const PASSPORT = import.meta.env.VITE_PASSPORT_REGISTRY_ADDRESS as Address | undefined;
 const ZERO_ID = "0x0000000000000000000000000000000000000000000000000000000000000000";
 
@@ -129,7 +134,11 @@ export function WorldIdVerify() {
           // verify endpoint accepts the 3.0 legacy proof shape, and we read responses[].nullifier
           // either way, so this is strictly more permissive.
           allow_legacy_proofs={true}
-          preset={proofOfHuman({ signal: address })}
+          preset={
+            MIN_AGE > 0
+              ? identityCheck({ attributes: [{ type: "minimum_age", value: MIN_AGE }], legacy_signal: address })
+              : proofOfHuman({ signal: address })
+          }
           onSuccess={onSuccess}
           onError={(code) => {
             setError(String(code));
