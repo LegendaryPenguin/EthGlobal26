@@ -8,6 +8,7 @@ import {IncomeRouter} from "../src/IncomeRouter.sol";
 import {PassportRegistry} from "../src/PassportRegistry.sol";
 import {TranchePool} from "../src/TranchePool.sol";
 import {IWorldID} from "../src/interfaces/IWorldID.sol";
+import {IERC20} from "../src/interfaces/IERC20.sol";
 import {MockWorldID} from "../test/MockWorldID.sol";
 
 /// @notice Live Arc Testnet deploy (chain id 5042002). Uses REAL Arc USDC (from USDC_ADDRESS) but a
@@ -24,11 +25,17 @@ contract DeployArc is Script {
         address usdc = vm.envAddress("USDC_ADDRESS"); // real Arc USDC (6 decimals)
         string memory appId = vm.envOr("WORLD_APP_ID", string("app_vouch_arc"));
         string memory actionId = vm.envOr("WORLD_ACTION_ID", string("mint-credit-passport"));
+        // Forwarder = the borrower server's relayer (only writer of setTerms); defaults to deployer.
+        address forwarder = vm.envOr("REGISTRY_FORWARDER", msg.sender);
+        // Pool seeding (default 0 → skip; deploy-arc.sh sets these so loans are funded by the pool).
+        uint256 seedSenior = vm.envOr("SEED_SENIOR_USDC", uint256(0));
+        uint256 seedJunior = vm.envOr("SEED_JUNIOR_USDC", uint256(0));
+        uint256 toVault = vm.envOr("DEPLOY_TO_VAULT_USDC", uint256(0));
 
         vm.startBroadcast();
 
         MockWorldID worldId = new MockWorldID(); // on-chain no-op; real check is the v4 cloud verify
-        LoanRegistry registry = new LoanRegistry(msg.sender); // forwarder = deployer (CRE stand-in)
+        LoanRegistry registry = new LoanRegistry(forwarder);
         PassportRegistry passport = new PassportRegistry(IWorldID(address(worldId)), appId, actionId);
         LoanVault vault = new LoanVault(address(registry), usdc, address(0));
         IncomeRouter router = new IncomeRouter(address(vault), usdc);
@@ -39,6 +46,15 @@ contract DeployArc is Script {
         passport.setReputationOracle(address(vault));
         pool.setLossReporter(address(vault));
         vault.setTranchePool(address(pool));
+
+        // Seed the pool from the deployer's USDC, then deploy that capital into the vault so borrower
+        // loans are drawn from lender pool capital. Deployer must hold USDC (faucet.circle.com).
+        if (seedSenior + seedJunior > 0) {
+            IERC20(usdc).approve(address(pool), seedSenior + seedJunior);
+            if (seedSenior > 0) pool.deposit(TranchePool.Tranche.Senior, seedSenior);
+            if (seedJunior > 0) pool.deposit(TranchePool.Tranche.Junior, seedJunior);
+        }
+        if (toVault > 0) pool.deployToVault(address(vault), toVault);
 
         vm.stopBroadcast();
 
