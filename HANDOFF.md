@@ -17,17 +17,112 @@ repaid in USDC on Arc** (Circle's L1) → repayment **auto-routes from future in
 bound to the human (**ERC-8004 passport**) so a defaulter **can't respawn** with a new wallet.
 Lenders fund a **senior/junior tranche** pool from any chain (Gateway / CCTP V2).
 
-Hackathon target: ~$22k across 6 core tracks (World ID, ProveKit, Chainlink CRE, Confidential AI,
-Arc Advanced Stablecoin Logic, Arc Liquidity Hub) + Connect-the-World bonus. See `docs/07`.
+---
 
-## 2. Get oriented fast (read order)
+## 2. The story (the context behind the build)
 
-1. This file (`HANDOFF.md`) — current state + how to run.
+**Credit Passport — Loans for people banks can't see.** A real human (proven by World ID) gets a
+loan with zero collateral, because a private AI judged their income without ever exposing it
+(Chainlink), and the money moves instantly in digital dollars (Arc). If they don't repay, they can't
+escape it by making a new account — their one-and-only identity carries the record.
+
+### The problem (and why it's real)
+If you make real money online — YouTube, Twitch, Upwork, gig driving — but you have no credit history
+and no assets to pledge, nobody will lend to you.
+- **Banks can't score you:** ~**32M** US adults are "unscoreable" (~7M with no credit file, ~25M too
+  thin to score). Globally ~**1.3B** adults are outside the formal financial system entirely.
+- **The pain hits the people who DO earn:** 70M+ Americans freelance (~36% of the workforce), yet
+  **80%** of full-time freelancers couldn't cover a surprise **$1,000** expense. ~**200M** creators
+  generate ~**$100B/yr** and banks admit they can't underwrite them — e.g. streamer Alexandra Botez
+  (877k followers, six-figure income) rejected twice for a business card; TierZoo (2.7M subscribers)
+  rejected for an apartment.
+- **Crypto doesn't fix it:** DeFi lending is almost entirely **overcollateralized** (lock up MORE
+  than you borrow), so it only serves people who already have money. Two unsolved blockers:
+  - **The respawn problem** — wallets are anonymous; default, make a new wallet, borrow again. No
+    incentive to repay.
+  - **The privacy problem** — judging a borrower needs their private financials, which nobody wants
+    to hand to a stranger or put on a public chain.
+- The protocols that DO lend undercollateralized (**Maple, Goldfinch**) only solved it by copying
+  banks: whitelisted **institutions** with full KYC. Individual humans are still locked out.
+
+### Why NOW — four primitives matured in ~18 months, and we're the first product that needs all of them
+- **Proof of personhood** (World, ~**18M** Orb-verified humans) — one human = one permanent identity.
+  Kills the respawn problem.
+- **Confidential compute** (Chainlink **Confidential AI**) — an AI reads sensitive data inside a
+  sealed hardware box (**TEE**) and outputs only an attested verdict. Kills the privacy problem.
+- **Portable on-chain reputation** (**ERC-8004**) — permanent, portable reputation bound to an
+  identity, no central gatekeeper.
+- **Programmable digital dollars** (**Arc**, Circle's L1) — USDC settles in seconds, gas-free, with
+  conditions written in code.
+
+### The idea
+A **credit passport** (ERC-8004). Verify as a unique human → mint a portable, person-bound credit
+reputation → a private AI underwrites you on income nobody ever sees → you get USDC instantly → you
+repay automatically out of future income via a smart-contract interceptor → repayment history updates
+the passport, and the passport sets your next limit. **The key invention: your personhood IS the
+collateral** — you don't pledge ETH, you pledge the only identity you'll ever have.
+
+### What it enables
+Credit for the 1.3B the system can't see (underwritten on real income, not a credit file they don't
+have); **privacy by default** (financials never exposed, only the verdict is public); a **reputation
+that travels** across every lender that plugs in; a **two-sided "fair-rate" yield market**.
+
+### Persona A — Tunde (the borrower)
+24, Lagos, ~**$900/mo** Web3 creator income, wants **$500** for a better camera. No Nigerian bank
+will touch him; Aave would demand ~$750 he doesn't have. His flow:
+1. **Prove he's one human** — verifies at a World Orb → mints his ERC-8004 passport at level 0.
+2. **Connect income privately** — links payout history straight into a sealed enclave (TEE). We never
+   see it; the chain never sees it.
+3. **ZK eligibility proof** — on his own phone he proves "monthly income > $300" without revealing the
+   figure; the proof is checked on-chain as a **gate** before underwriting.
+4. **Judged by an AI that can't gossip** — inside the TEE the underwriter reads 12 months of payouts →
+   *approved, $500, 10% APR*. The ONLY thing written on-chain is that attested verdict.
+5. **Money in seconds** — the Arc loan contract releases 500 USDC.
+6. **Repay without thinking** — his income stream pays the loan: when his platform pays him 1,000
+   USDC, the contract deducts the loan payment first and forwards the remainder.
+- **If he walks away:** his passport is slashed **network-wide** — locked out of credit until he cures
+  it, and a new wallet can't escape it because the flag lives on his one verified identity.
+
+### Persona B — Dana (the lender) + the "fair-rate" yield architecture
+Holds **50,000** idle USDC, wants real yield without degen risk. Deposits into the **Senior tranche**.
+Borrowers pay a fair **10% APY**; a **first-loss tranching** model protects passive lenders while
+incentivizing platforms to supply capital:
+- **Senior tranche (80%)** — passive lenders like Dana; guaranteed fixed **~6% APY**, insulated from
+  initial defaults.
+- **Junior tranche (20%)** — first-loss underwriters / platforms; absorb defaults first, take all
+  leftover interest.
+- **Worked math ($100k pool):** $10k interest generated ($100k × 10%); senior payout $4,800 ($80k ×
+  6%); leftover $5,200; junior only put up $20k → **~26% APY**.
+- **Protocol formula:** `Y_J = (P·R_B − S·R_S) / J`.
+
+Defaults are contained by design: income-routing collects first, laddered limits cap early losses,
+identity deters serial defaulters, and residual default risk is priced into the junior APY.
+
+### Tracks — one causally-chained build (~$22k core)
+Removing any piece breaks the product — which is exactly what these judges say they want:
+- **World** — Track B World ID ($2,500, the live respawn-rejection demo) + Track D ProveKit ($2,500,
+  the Noir eligibility circuit verified client-side).
+- **Chainlink** — Best CRE workflow ($6,000) + Confidential AI Attester ($4,000) **from one workflow**;
+  + Connect-the-World bonus ($2,000, a Chainlink feed causing an on-chain state change). The verdict
+  is what unlocks the money; it never touches the money.
+- **Arc** — Advanced Stablecoin Logic ($3,500, conditional disbursement + amortization + income
+  routing) + Chain-Abstracted USDC / Liquidity Hub ($3,500, lenders deposit any-chain → one Arc pool
+  via Gateway/CCTP V2); Agentic Economy stretch ($3,500, agent pays per-inference via x402).
+- **Demo honesty:** architect cross-chain, **run the live demo single-chain on Arc** — show the
+  cross-chain deposit with a pre-funded wallet or a clip; keep the bridge off the time-sensitive path.
+
+Full detail lives in `docs/01` (problem/personas) and `docs/07` (track coverage + demo script).
+
+---
+
+## 3. Get oriented fast (read order)
+
+1. This file (`HANDOFF.md`) — story (§2) + current state + how to run.
 2. `CLAUDE.md` — the golden rules (do not violate).
 3. `docs/01`→`07` — problem, architecture, Circle/Chainlink/World integration, build stages, tracks.
 4. The seam: `contracts/src/interfaces/ILoanRegistry.sol` (frozen — everything builds against it).
 
-## 3. Status (per build stage)
+## 4. Status (per build stage)
 
 | Stage | What | Status |
 |---|---|---|
@@ -45,9 +140,9 @@ Arc Advanced Stablecoin Logic, Arc Liquidity Hub) + Connect-the-World bonus. See
 Borrow/Claim, lender Earn (approve+deposit), mock Payout. Builds clean.
 
 **Local devnet** (`scripts/devnet.sh`): one command deploys + seeds everything on anvil and writes
-`app/.env` — the fastest way to click through the whole UI without testnet funds. See §7.
+`app/.env` — the fastest way to click through the whole UI without testnet funds. See §8.
 
-## 4. Toolchain & installs
+## 5. Toolchain & installs
 
 | Tool | Status | Path / note |
 |---|---|---|
@@ -55,9 +150,9 @@ Borrow/Claim, lender Earn (approve+deposit), mock Payout. Builds clean.
 | Foundry (forge/cast/anvil) | ✅ installed | **not on default PATH** → `export PATH="$HOME/.foundry/bin:$PATH"` |
 | Noir (nargo 1.0.0-beta.22) | ✅ installed | `export PATH="$HOME/.nargo/bin:$PATH"` |
 | Circle MCP server | config present (`.mcp.json`) | restart Claude Code to connect; then it serves live Arc addresses |
-| Circle skills plugin / superpowers plugin | ⚠️ NOT installed | `/plugin` clones over SSH and fail without keys — fix: `git config --global url."https://github.com/".insteadOf "git@github.com:"` then re-run the `/plugin install` slash commands (one per line) |
+| Circle skills / superpowers plugins | ⚠️ NOT installed | `/plugin` clones over SSH and fail without keys — fix: `git config --global url."https://github.com/".insteadOf "git@github.com:"` then re-run the `/plugin install` slash commands (one per line) |
 
-## 5. Repo map
+## 6. Repo map
 
 ```
 contracts/    Foundry. src/: LoanRegistry (seam), LoanVault, IncomeRouter, TranchePool,
@@ -70,7 +165,7 @@ scripts/      arc.ts, check-arc.ts; bridge-deposit.ts (CCTP V2) + CCTP.md; devne
 docs/         01–07 handoff docs (source of truth for the design).
 ```
 
-## 6. Architecture & contract wiring
+## 7. Architecture & contract wiring
 
 **The seam (frozen — Golden Rule #1):** `LoanRegistry.setTerms(Terms)` is written by the Chainlink
 CRE Forwarder and read by `LoanVault`. The `Terms` struct
@@ -99,7 +194,7 @@ verdict. Protected in every component (the CRE sim has a test asserting the payl
 then `vault.setRouter`, `vault.setPassportRegistry`, `passport.setReputationOracle(vault)`,
 `pool.setLossReporter(vault)`, `vault.setTranchePool(pool)`.
 
-## 7. Run it locally (fastest path — no testnet/creds)
+## 8. Run it locally (fastest path — no testnet/creds)
 
 ```bash
 export PATH="$HOME/.foundry/bin:$PATH"
@@ -113,7 +208,7 @@ World ID UI stays disabled locally (IDKit needs the real World sequencer) — th
 pre-seeded so you skip to Claim. `scripts/demo-local.sh` / `DemoLocal.s.sol` run the full lifecycle
 headless.
 
-## 8. Build & test (per workspace)
+## 9. Build & test (per workspace)
 
 ```bash
 # Contracts (86 tests)
@@ -128,7 +223,7 @@ cd app && npm install && npm run build      # or: npm run dev
 cd scripts && npm install && npm run bridge-deposit
 ```
 
-## 9. Environment
+## 10. Environment
 
 Real addresses/creds are **never hardcoded** (Golden Rule #5) — they come from `.env` / the Circle
 MCP. Templates: root `.env.example`, `app/.env.example`. Key vars:
@@ -138,7 +233,7 @@ MCP. Templates: root `.env.example`, `app/.env.example`. Key vars:
   (kept in `app/.env.local`, server-side only — no `VITE_` leak).
 - Chainlink CRE: `CONFIDENTIAL_AI_API_URL/KEY`, `LOAN_REGISTRY_ADDRESS`, `CRE_FORWARDER_ADDRESS`.
 
-## 10. Conventions (follow these)
+## 11. Conventions (follow these)
 
 - **Commits: no AI attribution** (no `Co-Authored-By`, no "Generated with"). Author as the user.
 - **Arc is testnet only**, chain id **5042002** (Golden Rule #3). Never mainnet.
@@ -147,19 +242,19 @@ MCP. Templates: root `.env.example`, `app/.env.example`. Key vars:
 - **Don't modify the frozen seam** (`LoanRegistry`/`ILoanRegistry`) without a coordinated re-freeze.
 - Parallel work: independent directories only; verify + integrate before committing.
 
-## 11. Blocked on credentials / external setup
+## 12. Blocked on credentials / external setup
 
 - **Live Arc deploy** — needs a funded key (`https://faucet.circle.com`) + live USDC/contract
   addresses (Circle MCP). Then `forge script script/Deploy.s.sol --rpc-url arc_testnet --broadcast`.
 - **CRE live run** — CRE CLI + Confidential AI sandbox; then `LoanRegistry.setForwarder(<forwarder>)`.
 - **World ID live** — World portal app + RP signing key + relayer (see `app/server/verify.ts`).
 - **ProveKit** — generate the browser WHIR/Groth16 proof from the compiled circuit; wire the verifier.
-- **Plugins** — `/plugin` SSH clone (see §4 fix).
+- **Plugins** — `/plugin` SSH clone (see §5 fix).
 
-## 12. Sensible next steps
+## 13. Sensible next steps
 
 - Connect the **Circle MCP** (restart) → replace placeholder `USDC_ADDRESS` etc. with live Arc values.
 - Live **Arc testnet deploy** once funded; paste addresses into `app/.env`.
-- **ProveKit** proof generation + on-chain/Backend verifier wiring (Stage 5 last mile).
+- **ProveKit** proof generation + on-chain/backend verifier wiring (Stage 5 last mile).
 - Harden TODOs: attestation signature verification in `LoanVault`; reentrancy guards in `TranchePool`;
   full indexed-Merkle non-membership in the Noir circuit.
