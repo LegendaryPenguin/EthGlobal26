@@ -34,10 +34,11 @@ seam → Arc LoanVault + USDC disburse/repay → CRE + Confidential AI (sim) →
 - ✅ **Stage 3 — Chainlink CRE.** `/cre` workflow simulation (trigger → confidential underwrite → `setTerms` encode). Tested; income-never-leaks test. Live CRE run needs the CRE CLI + Confidential AI endpoint.
 - ✅ **Stage 4 — World ID gate.** `PassportRegistry.verifyAndMint` (on-chain proof check, one passport/human, lock-out) + optional `LoanVault` good-standing gate. Tested incl. respawn-rejection.
 - 🟡 **Stage 5 — Noir circuit.** `/circuits` scaffolded; **uncompiled** (needs `nargo`).
-- 🟡 **Frontend.** MetaMask + Arc + reads the seam; World ID (IDKit) + payout wired (need env addresses + `WORLD_APP_ID`).
-- ⬜ **Stage 6** cross-chain deposits · **Stage 8** tranche yield + default-state wiring.
+- ✅ **Stage 6 — cross-chain / Liquidity Hub.** `TranchePool` senior/junior accounting + yield waterfall + loss absorption + `deployToVault`; `scripts/bridge-deposit.ts` CCTP V2 burn-and-mint (any chain → Arc). Tested.
+- 🟡 **Frontend.** MetaMask + Arc + reads the seam; World ID (IDKit), payout, and lender Earn/deposit wired (need env addresses + `WORLD_APP_ID`).
+- ⬜ **Stage 8** — wire repayment outcomes → `PassportRegistry` standing + default losses → `TranchePool.absorbLoss`; Connect-the-World bonus (price feed in rate contract).
 
-**Tests:** contracts 32/32 (`forge test`), CRE 19/19 (`cd cre && npm test`), frontend builds (`cd app && npm run build`).
+**Tests:** contracts 58/58 (`forge test`), CRE 19/19 (`cd cre && npm test`), frontend builds (`cd app && npm run build`).
 A full borrow→disburse→repay loop + respawn-rejection is proven in `contracts/test/EndToEnd.t.sol`.
 
 ## Setup
