@@ -1,6 +1,5 @@
 import { useEffect } from "react";
-import { WalletBar } from "./components/WalletBar";
-import { BorrowTab } from "./components/BorrowTab";
+import { BorrowFlow } from "./components/BorrowFlow";
 
 const Arrow = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -69,9 +68,9 @@ export function App() {
           <a href="#top" className="brand">Vouch</a>
           <nav className="nav-links">
             <a href="#how">How it works</a>
-            <a href="#get">Get an advance</a>
+            <a href="#why">Why Vouch</a>
           </nav>
-          <WalletBar />
+          <a className="btn btn--primary" href="#get">Get an advance <Arrow /></a>
         </div>
       </header>
 
@@ -196,7 +195,7 @@ export function App() {
               </p>
             </div>
             <div className="rv">
-              <BorrowTab />
+              <BorrowFlow />
             </div>
           </div>
         </section>

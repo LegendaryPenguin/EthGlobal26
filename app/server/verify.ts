@@ -1,154 +1,182 @@
-// Server-side World ID 4.0 flow (Path A — cloud verify), wired as Vite middleware in vite.config.ts.
-// DEV-ONLY: runs in Node alongside `npm run dev`; the RP signing key + relayer key never reach the
-// browser bundle (no VITE_ prefix). Two endpoints:
+// Server-side World ID 4.0 — IDENTITY-FIRST flow (Vite dev middleware). The human signs in with a
+// World ID *session* (repeatable identification across visits — no one-time `nullifier_replayed`);
+// the server provisions a custodial managed wallet per human, mints/loads their ERC-8004 passport,
+// and signs the claim on their behalf. No MetaMask required — scan to onboard.
 //
-//   POST /api/world/context  → signs a fresh rp_context (nonce + RP signature) with the RP signing
-//                              key, so the browser's IDKit request is bound to a nonce World will
-//                              accept. (World ID 4.0 requires this; idkit cannot fabricate it.)
-//   POST /api/verify         → forwards the v4 proof to World's /api/v4/verify/{rp_id} (real ZK +
-//                              nullifier check), then mints the ERC-8004 passport via a relayer.
+//   POST /api/world/session-context → signs an rp_context nonce WITHOUT an action (sessions omit it)
+//   POST /api/world/signin          → verifies the session proof, derives the human's managed wallet,
+//                                      mints/loads the passport + seeds terms, returns the credit report
+//   POST /api/world/claim           → the managed wallet (funded for gas) signs LoanVault.claim()
 //
-// On Arc there is no in-contract World ID verifier (docs/05), so validation happens here — which the
-// World ID track permits. The on-chain MockWorldID rubber-stamps the mint; the passport is keyed by
-// the REAL RP-scoped nullifier so anti-respawn still binds to the verified human.
+// CUSTODY NOTE: the managed wallet key = keccak256(serverSecret || sessionNullifier). The serverSecret
+// stays server-side, so the browser can't derive it. This is custodial — fine for a testnet demo;
+// real funds would use a non-custodial embedded-wallet provider.
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { signRequest } from "@worldcoin/idkit-server";
-import { createWalletClient, http, defineChain, type Address, type Hex } from "viem";
+import {
+  createWalletClient, createPublicClient, http, defineChain, keccak256, concat,
+  type Address, type Hex,
+} from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { passportRegistryAbi } from "../src/abis/passportRegistry";
 
-// World's cloud verify host (same origin idkit used historically). Override with WORLD_API_BASE.
-const WORLD_API = (envBase?: string) => envBase || "https://developer.worldcoin.org";
+const PASSPORT_ABI = [
+  { type: "function", name: "verifyAndMint", stateMutability: "nonpayable", inputs: [{ name: "signal", type: "address" }, { name: "root", type: "uint256" }, { name: "nullifierHash", type: "uint256" }, { name: "proof", type: "uint256[8]" }], outputs: [] },
+  { type: "function", name: "passportIdOf", stateMutability: "view", inputs: [{ name: "w", type: "address" }], outputs: [{ type: "bytes32" }] },
+  { type: "function", name: "creditReport", stateMutability: "view", inputs: [{ name: "w", type: "address" }], outputs: [{ type: "tuple", components: [
+    { name: "passportId", type: "bytes32" }, { name: "standing", type: "uint8" }, { name: "limit", type: "uint256" }, { name: "score", type: "uint32" }, { name: "onTimePayments", type: "uint32" }, { name: "latePayments", type: "uint32" }, { name: "defaults", type: "uint32" }] }] },
+] as const;
+const REGISTRY_ABI = [
+  { type: "function", name: "setTerms", stateMutability: "nonpayable", inputs: [{ name: "t", type: "tuple", components: [
+    { name: "borrower", type: "address" }, { name: "passportId", type: "bytes32" }, { name: "principal", type: "uint256" }, { name: "aprBps", type: "uint16" }, { name: "riskBand", type: "uint8" }, { name: "attestationRef", type: "bytes32" }, { name: "expiry", type: "uint64" }, { name: "approved", type: "bool" }] }], outputs: [] },
+  { type: "function", name: "getTerms", stateMutability: "view", inputs: [{ name: "b", type: "address" }], outputs: [{ type: "tuple", components: [
+    { name: "borrower", type: "address" }, { name: "passportId", type: "bytes32" }, { name: "principal", type: "uint256" }, { name: "aprBps", type: "uint16" }, { name: "riskBand", type: "uint8" }, { name: "attestationRef", type: "bytes32" }, { name: "expiry", type: "uint64" }, { name: "approved", type: "bool" }] }] },
+] as const;
+const VAULT_ABI = [{ type: "function", name: "claim", stateMutability: "nonpayable", inputs: [], outputs: [] }] as const;
+
+const WORLD_API = (base?: string) => base || "https://developer.worldcoin.org";
+const DEMO_PRINCIPAL = 5_000_000n; // $5, 6dp — small so many demo humans can be funded
+const DEMO_APR_BPS = 1000;
 
 interface Env {
   APP_ID?: `app_${string}`;
-  ACTION: string;
   RP_ID?: string;
-  RP_SIGNING_KEY?: string; // the RP's registered signer key (signs the nonce)
-  RELAYER_PK?: Hex; // mints the passport on-chain (local devnet: anvil #0)
+  RP_SIGNING_KEY?: Hex; // also the managed-wallet derivation secret
+  RELAYER_PK?: Hex; // mints/seeds (forwarder = deployer) + funds gas
   PASSPORT?: Address;
+  REGISTRY?: Address;
+  VAULT?: Address;
   RPC: string;
   WORLD_API_BASE?: string;
 }
-
 function readEnv(env: Record<string, string>): Env {
   return {
     APP_ID: env.VITE_WORLD_APP_ID as `app_${string}` | undefined,
-    ACTION: env.VITE_WORLD_ACTION_ID || "mint-credit-passport",
     RP_ID: env.VITE_WORLD_RP_ID,
-    RP_SIGNING_KEY: env.WORLD_RP_SIGNING_KEY,
+    RP_SIGNING_KEY: env.WORLD_RP_SIGNING_KEY as Hex | undefined,
     RELAYER_PK: env.RELAYER_PRIVATE_KEY as Hex | undefined,
     PASSPORT: env.VITE_PASSPORT_REGISTRY_ADDRESS as Address | undefined,
+    REGISTRY: env.VITE_LOAN_REGISTRY_ADDRESS as Address | undefined,
+    VAULT: env.VITE_LOAN_VAULT_ADDRESS as Address | undefined,
     RPC: env.VITE_ARC_RPC_URL || "http://127.0.0.1:8545",
     WORLD_API_BASE: env.WORLD_API_BASE,
   };
 }
+const arc = (rpc: string) =>
+  defineChain({ id: 5042002, name: "Arc Testnet", nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 }, rpcUrls: { default: { http: [rpc] } } });
 
-/// POST /api/world/context — mint a signed rp_context for the browser's IDKit request.
-export function createContextHandler(rawEnv: Record<string, string>) {
-  const env = readEnv(rawEnv);
-  return async function handle(_req: IncomingMessage, res: ServerResponse) {
+/// Deterministic custodial wallet for a human, derived from their session nullifier + the server secret.
+function managedAccount(sessionNullifier: string, secret: Hex) {
+  const pk = keccak256(concat([secret, sessionNullifier as Hex]));
+  return privateKeyToAccount(pk);
+}
+
+/// POST /api/world/session-context — signed rp_context for a SESSION request (no action).
+export function createSessionContextHandler(raw: Record<string, string>) {
+  const env = readEnv(raw);
+  return async (_req: IncomingMessage, res: ServerResponse) => {
     try {
-      if (!env.APP_ID || !env.RP_ID || !env.RP_SIGNING_KEY) {
-        return json(res, 500, { ok: false, error: "Server missing VITE_WORLD_APP_ID / VITE_WORLD_RP_ID / WORLD_RP_SIGNING_KEY" });
-      }
-      console.log("[world] /api/world/context requested");
-      const sig = signRequest({ signingKeyHex: env.RP_SIGNING_KEY, action: env.ACTION });
-      const rp_context = {
-        rp_id: env.RP_ID,
-        nonce: sig.nonce,
-        created_at: sig.createdAt,
-        expires_at: sig.expiresAt,
-        signature: sig.sig,
-      };
-      return json(res, 200, { ok: true, rp_context, app_id: env.APP_ID, action: env.ACTION });
-    } catch (e: unknown) {
-      return json(res, 500, { ok: false, error: e instanceof Error ? e.message : String(e) });
+      if (!env.RP_ID || !env.RP_SIGNING_KEY) return json(res, 500, { ok: false, error: "missing RP config" });
+      const sig = signRequest({ signingKeyHex: env.RP_SIGNING_KEY }); // no action → session
+      return json(res, 200, { ok: true, rp_context: { rp_id: env.RP_ID, nonce: sig.nonce, created_at: sig.createdAt, expires_at: sig.expiresAt, signature: sig.sig }, app_id: env.APP_ID });
+    } catch (e) {
+      return json(res, 500, { ok: false, error: errMsg(e) });
     }
   };
 }
 
-/// POST /api/verify — verify the v4 proof with World, then mint the passport.
-export function createVerifyHandler(rawEnv: Record<string, string>) {
-  const env = readEnv(rawEnv);
-  const arc = defineChain({
-    id: 5042002,
-    name: "Arc Testnet",
-    nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
-    rpcUrls: { default: { http: [env.RPC] } },
-  });
-
-  return async function handle(req: IncomingMessage, res: ServerResponse) {
+/// POST /api/world/signin — verify the session proof, provision the human's wallet, load/mint passport.
+export function createSigninHandler(raw: Record<string, string>) {
+  const env = readEnv(raw);
+  return async (req: IncomingMessage, res: ServerResponse) => {
     try {
-      if (!env.RP_ID) return json(res, 500, { ok: false, error: "Server missing VITE_WORLD_RP_ID" });
-      const body = (await readJson(req)) as { result?: Record<string, unknown>; signal?: Address };
-      const { result, signal } = body;
-      if (!result || !signal) return json(res, 400, { ok: false, error: "missing result or signal" });
+      if (!env.RP_ID || !env.RP_SIGNING_KEY || !env.RELAYER_PK || !env.PASSPORT || !env.REGISTRY) {
+        return json(res, 500, { ok: false, error: "server not fully configured" });
+      }
+      const { result } = (await readJson(req)) as { result?: Record<string, unknown> };
+      if (!result) return json(res, 400, { ok: false, error: "missing session result" });
 
-      // 1: REAL World ID 4.0 verification. The IDKitResultV4 already has the exact shape the verify
-      // endpoint wants (protocol_version, nonce, action, environment, responses[]).
+      // 1. Verify the session proof with World (real human + session).
       const vres = await fetch(`${WORLD_API(env.WORLD_API_BASE)}/api/v4/verify/${env.RP_ID}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(result),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(result),
       });
-      const vdata = (await vres.json()) as { success?: boolean; nullifier?: string; code?: string; detail?: string };
-      console.log(`[world] /api/verify → World v4 verify: HTTP ${vres.status}`, JSON.stringify(vdata));
-      if (!vres.ok || !vdata.success) {
-        return json(res, 400, { ok: false, error: `World verify failed: ${vdata.code ?? vres.status}`, detail: vdata.detail });
+      const vdata = (await vres.json()) as { success?: boolean; code?: string; detail?: string };
+      console.log(`[world] /api/world/signin → verify HTTP ${vres.status}`, JSON.stringify(vdata));
+      if (!vres.ok || !vdata.success) return json(res, 400, { ok: false, error: `World sign-in failed: ${vdata.code ?? vres.status}`, detail: vdata.detail });
+
+      const responses = (result.responses as Array<{ session_nullifier?: string[] }>) ?? [];
+      const sessionNullifier = responses[0]?.session_nullifier?.[0];
+      if (!sessionNullifier) return json(res, 502, { ok: false, error: "no session_nullifier in proof" });
+
+      // 2. Provision the human's custodial wallet + relayer mints/seeds on first sight.
+      const wallet = managedAccount(sessionNullifier, env.RP_SIGNING_KEY).address;
+      const pub = createPublicClient({ chain: arc(env.RPC), transport: http(env.RPC) });
+      const relayer = createWalletClient({ account: privateKeyToAccount(env.RELAYER_PK), chain: arc(env.RPC), transport: http(env.RPC) });
+
+      const existing = (await pub.readContract({ address: env.PASSPORT, abi: PASSPORT_ABI, functionName: "passportIdOf", args: [wallet] })) as Hex;
+      const fresh = /^0x0+$/.test(existing);
+      if (fresh) {
+        const empty = [0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n] as const;
+        const mintTx = await relayer.writeContract({ address: env.PASSPORT, abi: PASSPORT_ABI, functionName: "verifyAndMint", args: [wallet, 0n, BigInt(sessionNullifier), empty] });
+        await pub.waitForTransactionReceipt({ hash: mintTx });
+        const passportId = (await pub.readContract({ address: env.PASSPORT, abi: PASSPORT_ABI, functionName: "passportIdOf", args: [wallet] })) as Hex;
+        const expiry = BigInt(Math.floor(Date.now() / 1000) + 30 * 24 * 3600);
+        await relayer.writeContract({ address: env.REGISTRY, abi: REGISTRY_ABI, functionName: "setTerms", args: [{ borrower: wallet, passportId, principal: DEMO_PRINCIPAL, aprBps: DEMO_APR_BPS, riskBand: 1, attestationRef: keccak256(concat(["0x01", wallet])) , expiry, approved: true }] });
       }
 
-      // 2: mint the passport on-chain via the relayer. Key it by the REAL RP-scoped nullifier so the
-      // anti-respawn mapping binds to the verified human (MockWorldID ignores the proof args on Arc).
-      if (!env.RELAYER_PK || !env.PASSPORT) {
-        return json(res, 500, { ok: false, error: "Server missing RELAYER_PRIVATE_KEY or VITE_PASSPORT_REGISTRY_ADDRESS" });
-      }
-      const responses = (result.responses as Array<{ nullifier?: string }> | undefined) ?? [];
-      const nullifierHex = vdata.nullifier ?? responses[0]?.nullifier;
-      if (!nullifierHex) return json(res, 502, { ok: false, error: "verify ok but no nullifier returned" });
+      const report = (await pub.readContract({ address: env.PASSPORT, abi: PASSPORT_ABI, functionName: "creditReport", args: [wallet] })) as { passportId: Hex; standing: number; limit: bigint; score: number; onTimePayments: number; latePayments: number; defaults: number };
+      const terms = (await pub.readContract({ address: env.REGISTRY, abi: REGISTRY_ABI, functionName: "getTerms", args: [wallet] })) as { principal: bigint; aprBps: number; approved: boolean };
 
-      const account = privateKeyToAccount(env.RELAYER_PK);
-      const wallet = createWalletClient({ account, chain: arc, transport: http(env.RPC) });
-      const emptyProof = [0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n] as const;
-      const txHash = await wallet.writeContract({
-        address: env.PASSPORT,
-        abi: passportRegistryAbi,
-        functionName: "verifyAndMint",
-        args: [signal, 0n, BigInt(nullifierHex), emptyProof],
+      return json(res, 200, {
+        ok: true, wallet, sessionNullifier,
+        passport: { id: report.passportId, standing: report.standing, limit: report.limit.toString(), score: report.score, onTimePayments: report.onTimePayments, latePayments: report.latePayments, defaults: report.defaults },
+        terms: { principal: terms.principal.toString(), aprBps: terms.aprBps, approved: terms.approved },
       });
-
-      return json(res, 200, { ok: true, txHash, nullifier: nullifierHex });
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      // Anti-respawn money-shot: World verified a real human, but the on-chain mint reverts because
-      // this human defaulted before and is locked out — a fresh wallet can't escape it.
-      if (message.includes("HumanLockedOut")) {
-        return json(res, 403, {
-          ok: false,
-          error: "locked_out",
-          detail: "This human defaulted on a prior loan and is locked out network-wide. A new wallet can't escape it.",
-        });
-      }
-      return json(res, 500, { ok: false, error: message });
+    } catch (e) {
+      return json(res, 500, { ok: false, error: errMsg(e) });
     }
   };
 }
 
+/// POST /api/world/claim — fund the managed wallet for gas, then it signs LoanVault.claim().
+export function createClaimHandler(raw: Record<string, string>) {
+  const env = readEnv(raw);
+  return async (req: IncomingMessage, res: ServerResponse) => {
+    try {
+      if (!env.RP_SIGNING_KEY || !env.RELAYER_PK || !env.VAULT) return json(res, 500, { ok: false, error: "server not configured" });
+      const { sessionNullifier } = (await readJson(req)) as { sessionNullifier?: string };
+      if (!sessionNullifier) return json(res, 400, { ok: false, error: "missing sessionNullifier" });
+
+      const account = managedAccount(sessionNullifier, env.RP_SIGNING_KEY);
+      const pub = createPublicClient({ chain: arc(env.RPC), transport: http(env.RPC) });
+      const relayer = createWalletClient({ account: privateKeyToAccount(env.RELAYER_PK), chain: arc(env.RPC), transport: http(env.RPC) });
+
+      // Top up the managed wallet with a little native USDC for gas if needed.
+      const bal = await pub.getBalance({ address: account.address });
+      if (bal < 5_000_000_000_000_000n) { // < 0.005
+        const fundTx = await relayer.sendTransaction({ to: account.address, value: 20_000_000_000_000_000n }); // 0.02 for gas
+        await pub.waitForTransactionReceipt({ hash: fundTx });
+      }
+
+      const wallet = createWalletClient({ account, chain: arc(env.RPC), transport: http(env.RPC) });
+      const txHash = await wallet.writeContract({ address: env.VAULT, abi: VAULT_ABI, functionName: "claim" });
+      return json(res, 200, { ok: true, txHash, wallet: account.address });
+    } catch (e) {
+      const m = errMsg(e);
+      if (m.includes("NotInGoodStanding")) return json(res, 403, { ok: false, error: "locked_out", detail: "This human is locked out (a prior loan defaulted)." });
+      return json(res, 500, { ok: false, error: m });
+    }
+  };
+}
+
+function errMsg(e: unknown) { return e instanceof Error ? e.message : String(e); }
 function readJson(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    let data = "";
-    req.on("data", (chunk) => (data += chunk));
-    req.on("end", () => {
-      try {
-        resolve(data ? JSON.parse(data) : {});
-      } catch (e) {
-        reject(e);
-      }
-    });
+    let d = "";
+    req.on("data", (c) => (d += c));
+    req.on("end", () => { try { resolve(d ? JSON.parse(d) : {}); } catch (e) { reject(e); } });
     req.on("error", reject);
   });
 }
-
 function json(res: ServerResponse, status: number, payload: unknown) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
