@@ -90,7 +90,11 @@ export function WorldIdVerify() {
           app_id={APP_ID}
           action={ACTION}
           rp_context={rpContext}
-          allow_legacy_proofs={false}
+          // Accept v3 (legacy) proofs too, not just v4-only — World App installs that can't complete
+          // a v4-only proof-of-human request (older app / device-verified) fail otherwise. The v4
+          // verify endpoint accepts the 3.0 legacy proof shape, and we read responses[].nullifier
+          // either way, so this is strictly more permissive.
+          allow_legacy_proofs={true}
           preset={proofOfHuman({ signal: address })}
           onSuccess={onSuccess}
           onError={(code) => {
