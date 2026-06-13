@@ -40,6 +40,33 @@ export const passportRegistryAbi = [
     inputs: [{ name: "wallet", type: "address" }],
     outputs: [{ type: "bytes32" }], // the human's ERC-8004 passport id; 0x0 if none
   },
+  {
+    type: "function",
+    name: "scoreOf",
+    stateMutability: "view",
+    inputs: [{ name: "wallet", type: "address" }],
+    outputs: [{ type: "uint32" }],
+  },
+  {
+    type: "function",
+    name: "creditReport",
+    stateMutability: "view",
+    inputs: [{ name: "wallet", type: "address" }],
+    outputs: [
+      {
+        type: "tuple",
+        components: [
+          { name: "passportId", type: "bytes32" },
+          { name: "standing", type: "uint8" },
+          { name: "limit", type: "uint256" },
+          { name: "score", type: "uint32" },
+          { name: "onTimePayments", type: "uint32" },
+          { name: "latePayments", type: "uint32" },
+          { name: "defaults", type: "uint32" },
+        ],
+      },
+    ],
+  },
 ] as const;
 
 export const STANDING_LABELS = ["Unverified", "Good", "Late", "Defaulted", "Locked out"] as const;

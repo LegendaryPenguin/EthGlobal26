@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { IDKitRequestWidget, proofOfHuman, identityCheck, type IDKitResult } from "@worldcoin/idkit";
 import { useAccount, useReadContract } from "wagmi";
-import type { Address } from "viem";
+import { formatUnits, type Address } from "viem";
 import { passportRegistryAbi, STANDING_LABELS } from "../abis/passportRegistry";
 
 const APP_ID = import.meta.env.VITE_WORLD_APP_ID as `app_${string}` | undefined;
@@ -52,6 +52,14 @@ export function WorldIdVerify() {
     args: address ? [address] : undefined,
     query: { enabled: Boolean(PASSPORT && address) },
   });
+  // The portable, person-bound credit report — any lender can poll this by wallet.
+  const { data: report } = useReadContract({
+    address: PASSPORT,
+    abi: passportRegistryAbi,
+    functionName: "creditReport",
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(PASSPORT && address) },
+  });
 
   if (!APP_ID) {
     return <p className="muted">Set VITE_WORLD_APP_ID (World developer portal) to enable World ID — see app/.env.local.</p>;
@@ -68,7 +76,22 @@ export function WorldIdVerify() {
         <p>
           <strong>Passport ID:</strong> <code>{existingId}</code>
         </p>
-        <p className="muted">Standing: {STANDING_LABELS[Number(standing ?? 0)] ?? "Unknown"}</p>
+        <p>
+          <strong>Standing:</strong> {STANDING_LABELS[Number(report?.standing ?? standing ?? 0)] ?? "Unknown"}
+        </p>
+        {report && (
+          <ul className="credit-report muted">
+            <li>Credit score: <strong>{Number(report.score)}</strong></li>
+            <li>Credit limit: <strong>{formatUnits(report.limit, 6)} USDC</strong></li>
+            <li>Loans repaid on time: <strong>{Number(report.onTimePayments)}</strong></li>
+            <li>Late marks: <strong>{Number(report.latePayments)}</strong></li>
+            <li>Defaults: <strong>{Number(report.defaults)}</strong></li>
+          </ul>
+        )}
+        <p className="muted">
+          This credit report is bound to your World ID — any lender can poll it, and it follows you
+          across every wallet you use.
+        </p>
       </div>
     );
   }
