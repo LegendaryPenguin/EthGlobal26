@@ -1,0 +1,21 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# node
+node_modules/
+dist/
+*.log
+
+# foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+contracts/lib/
+
+# noir / provekit
+circuits/target/
+
+# os
+.DS_Store
