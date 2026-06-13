@@ -3,24 +3,22 @@ import react from "@vitejs/plugin-react";
 import { createRequire } from "node:module";
 import { createReadStream } from "node:fs";
 import path from "node:path";
-import { createContextHandler, createVerifyHandler } from "./server/verify";
+import { createSessionContextHandler, createSigninHandler, createClaimHandler } from "./server/verify";
 
 const require = createRequire(import.meta.url);
-// idkit-core ships its bridge WASM next to its built JS; resolve the package entry (its exports map
-// blocks resolving ./package.json) and take the WASM from the same dist dir.
 const IDKIT_WASM = path.join(path.dirname(require.resolve("@worldcoin/idkit-core")), "idkit_wasm_bg.wasm");
 
-/// Dev-only middleware for the World ID 4.0 flow (server/verify.ts) + serving idkit's bridge WASM.
+/// Dev-only middleware for the identity-first World ID 4.0 flow (server/verify.ts) + serving idkit's
+/// bridge WASM. The RP signing key / relayer / managed-wallet secret all stay server-side.
 function worldId(env: Record<string, string>): Plugin {
+  const post = (handler: (req: any, res: any) => void) => (req: any, res: any, next: any) => {
+    if (req.method !== "POST") return next();
+    handler(req, res);
+  };
   return {
     name: "world-id-v4",
     configureServer(server) {
-      const context = createContextHandler(env);
-      const verify = createVerifyHandler(env);
-
-      // Serve idkit's WASM with the correct MIME. idkit-core fetches it via
-      // `new URL("idkit_wasm_bg.wasm", import.meta.url)`; Vite otherwise returns index.html for it
-      // (wrong MIME → WebAssembly.instantiate fails → the World ID bridge dies with "Something went wrong").
+      // Serve idkit's bridge WASM with the correct MIME (else Vite returns index.html → bridge dies).
       server.middlewares.use((req, res, next) => {
         if (req.url && req.url.split("?")[0].endsWith("idkit_wasm_bg.wasm")) {
           res.setHeader("Content-Type", "application/wasm");
@@ -29,24 +27,14 @@ function worldId(env: Record<string, string>): Plugin {
         }
         next();
       });
-
-      server.middlewares.use("/api/world/context", (req, res, next) => {
-        if (req.method !== "POST") return next();
-        context(req, res);
-      });
-      server.middlewares.use("/api/verify", (req, res, next) => {
-        if (req.method !== "POST") return next();
-        verify(req, res);
-      });
+      server.middlewares.use("/api/world/session-context", post(createSessionContextHandler(env)));
+      server.middlewares.use("/api/world/signin", post(createSigninHandler(env)));
+      server.middlewares.use("/api/world/claim", post(createClaimHandler(env)));
     },
   };
 }
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
-  // NOTE: idkit MUST stay pre-bundled (the default) — excluding it breaks the CJS→ESM interop for
-  // its `qrcode` dependency (white screen: "does not provide an export named 'default'"). The WASM
-  // is handled by the middleware above (matches the filename regardless of the bundled path), so we
-  // do NOT need optimizeDeps.exclude.
   return { plugins: [react(), worldId(env)] };
 });
