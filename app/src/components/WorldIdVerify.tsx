@@ -52,7 +52,9 @@ export function WorldIdVerify() {
 
   return (
     <div>
-      <IDKitWidget app_id={APP_ID} action={ACTION} signal={address} verification_level={VerificationLevel.Orb} onSuccess={onSuccess}>
+      {/* Device level works for any verified phone; switch to VerificationLevel.Orb for true
+          one-human-per-person sybil resistance (requires the user to have visited an Orb). */}
+      <IDKitWidget app_id={APP_ID} action={ACTION} signal={address} verification_level={VerificationLevel.Device} onSuccess={onSuccess}>
         {({ open }) => (
           <button className="btn btn--primary" onClick={open} disabled={status === "verifying"}>
             {status === "verifying" ? "Verifying + minting…" : status === "done" ? "Passport minted ✓" : "Verify with World ID"}
