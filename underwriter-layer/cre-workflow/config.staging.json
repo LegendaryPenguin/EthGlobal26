@@ -5,5 +5,6 @@
   "chainSelectorName": "ethereum-testnet-sepolia",
   "consumerAddress": "0x0000000000000000000000000000000000000000",
   "authorizedKeys": [],
-  "usdcAddress": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"
+  "usdcAddress": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+  "creCallbackUrl": "https://your-ngrok-url.ngrok-free.dev/trigger"
 }

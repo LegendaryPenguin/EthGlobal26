@@ -33,10 +33,10 @@ underwriter-layer/
 │   ├── types.ts                   # Shared types & schemas
 │   ├── prompts.ts                 # AI prompt templates
 │   ├── modules/
-│   │   ├── identity.ts            # World ID + ZK proof validation
-│   │   ├── wallet-score.ts        # EVM reads → WalletProfile
 │   │   ├── attest.ts              # Confidential AI Attester (TEE)
-│   │   └── settle.ts              # ABI-encode + writeReport on-chain
+|   |   |── identity.ts            # World ID + ZK proof validation
+│   │   ├── settle.ts              # ABI-encode + writeReport on-chain
+│   │   └── wallet-score.ts        # EVM reads → WalletProfile
 │   ├── package.json
 │   ├── tsconfig.json
 │   ├── workflow.yaml
@@ -64,9 +64,9 @@ validate(identity) → scoreWallets(evm) → attest(ai) → settle(evm)
 | Module | Capability | What It Does |
 |--------|-----------|--------------|
 | **identity** | Pure logic | Validates World ID nullifier + ZK eligibility proof |
-| **wallet-score** | `EVMClientCapability` | Reads USDC balances on-chain, merges with frontend context |
-| **attest** | `HTTPClientCapability` (runInNodeMode) | Sends wallet profile to Confidential AI Attester in TEE |
-| **settle** | `EVMClientCapability` (writeReport) | ABI-encodes decision, writes to CreditRegistry on-chain |
+| **wallet-score** | `EVMClient` | Reads USDC balances on-chain, merges with frontend context |
+| **attest** | `HTTPClient` (sendRequest) | Sends wallet profile to Confidential AI Attester in TEE |
+| **settle** | `EVMClient` (writeReport) | ABI-encodes decision, writes to CreditRegistry on-chain |
 
 ## Prerequisites
 
@@ -98,6 +98,9 @@ cre workflow simulate cre-workflow --target staging-settings
 ```
 
 ### Loan Application (HTTP trigger)
+
+*(Note: If using Windows PowerShell, you may need to condense the JSON payload into a single line or escape double quotes `\"` instead of wrapping in single quotes).*
+
 ```bash
 cre workflow simulate cre-workflow \
   --non-interactive --trigger-index 1 \

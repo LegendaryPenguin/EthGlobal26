@@ -55,6 +55,19 @@ export type Config = {
   confAiModel: string
   chainSelectorName: string
   consumerAddress: string
-  authorizedKeys: string[]
+  authorizedKeys: { type?: "KEY_TYPE_UNSPECIFIED" | "KEY_TYPE_ECDSA_EVM"; publicKey?: string }[]
   usdcAddress: string
+  creCallbackUrl: string
+}
+
+// ---------------------------------------------------------------------------
+// Inference Callback Payload
+// ---------------------------------------------------------------------------
+
+export type InferenceCallback = {
+  id?: string
+  status?: string // "completed" | "failed"
+  output?: string // LLM decision as JSON, wrapped in a ```json fence
+  resource_summaries?: { digest?: string; filename?: string }[]
+  resources?: { digest?: string; request_digest?: string; response_digest?: string }[]
 }

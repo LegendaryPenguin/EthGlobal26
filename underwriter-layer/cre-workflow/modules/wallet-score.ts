@@ -1,5 +1,5 @@
 import {
-  EVMClientCapability,
+  EVMClient,
   type Runtime,
 } from "@chainlink/cre-sdk"
 import {
@@ -7,6 +7,8 @@ import {
   encodeFunctionData,
   decodeFunctionResult,
   formatUnits,
+  bytesToHex,
+  hexToBytes,
 } from "viem"
 import type { Config, LoanRequest, WalletProfile } from "../types"
 
@@ -29,7 +31,7 @@ export function getWalletScore(
   runtime: Runtime<Config>,
   req: LoanRequest,
 ): WalletProfile {
-  const evmClient = new EVMClientCapability()
+  const evmClient = new EVMClient(EVMClient.SUPPORTED_CHAIN_SELECTORS["ethereum-testnet-sepolia"])
   let totalStablecoinBalance = 0n
 
   // Read USDC balance for each connected wallet
@@ -43,19 +45,17 @@ export function getWalletScore(
     try {
       const result = evmClient
         .callContract(runtime, {
-          toAddress: runtime.config.usdcAddress,
-          chainSelectorName: runtime.config.chainSelectorName,
-          callMsg: {
-            data: callData,
-            blockNumber: LAST_FINALIZED_BLOCK,
-          },
+          call: {
+            to: hexToBytes(runtime.config.usdcAddress as `0x${string}`),
+            data: hexToBytes(callData),
+          } as any,
         })
         .result()
 
       const decoded = decodeFunctionResult({
         abi: erc20Abi,
         functionName: "balanceOf",
-        data: result.data as `0x${string}`,
+        data: bytesToHex(result.data as any),
       })
 
       // decodeFunctionResult returns the balance directly for single return values

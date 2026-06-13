@@ -1,8 +1,8 @@
 staging-settings:
-  evms:
-    - chain-selector: "16015286601757825753"
-      rpc-url: "https://ethereum-sepolia-rpc.publicnode.com"
+  rpcs:
+    - chain-name: ethereum-testnet-sepolia
+      url: "https://ethereum-sepolia-rpc.publicnode.com"
 production-settings:
-  evms:
-    - chain-selector: "5009297550715157269"
-      rpc-url: "https://ethereum-mainnet-rpc.example.com"
+  rpcs:
+    - chain-name: ethereum-mainnet
+      url: "https://ethereum-mainnet-rpc.example.com"
