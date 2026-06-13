@@ -52,6 +52,7 @@ export function createContextHandler(rawEnv: Record<string, string>) {
       if (!env.APP_ID || !env.RP_ID || !env.RP_SIGNING_KEY) {
         return json(res, 500, { ok: false, error: "Server missing VITE_WORLD_APP_ID / VITE_WORLD_RP_ID / WORLD_RP_SIGNING_KEY" });
       }
+      console.log("[world] /api/world/context requested");
       const sig = signRequest({ signingKeyHex: env.RP_SIGNING_KEY, action: env.ACTION });
       const rp_context = {
         rp_id: env.RP_ID,
@@ -92,6 +93,7 @@ export function createVerifyHandler(rawEnv: Record<string, string>) {
         body: JSON.stringify(result),
       });
       const vdata = (await vres.json()) as { success?: boolean; nullifier?: string; code?: string; detail?: string };
+      console.log(`[world] /api/verify → World v4 verify: HTTP ${vres.status}`, JSON.stringify(vdata));
       if (!vres.ok || !vdata.success) {
         return json(res, 400, { ok: false, error: `World verify failed: ${vdata.code ?? vres.status}`, detail: vdata.detail });
       }
