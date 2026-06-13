@@ -1,78 +1,123 @@
-// Server-side World ID verification (Path A — cloud verify). DEV-ONLY: wired as a Vite middleware
-// in vite.config.ts, so it runs in Node alongside `npm run dev` and the relayer key never reaches
-// the browser bundle (no VITE_ prefix). Flow:
-//   1. The browser sends the IDKit proof + the signal (connected wallet) to POST /api/verify.
-//   2. We verify the proof against World's cloud API (real ZK + nullifier check) via verifyCloudProof.
-//   3. On success, a relayer wallet mints the ERC-8004 passport on-chain (PassportRegistry.verifyAndMint).
-// On Arc there is no World ID Router to verify in-contract (docs/05), so the real validation happens
-// here in step 2 — which the World ID track explicitly permits ("backend OR on-chain").
+// Server-side World ID 4.0 flow (Path A — cloud verify), wired as Vite middleware in vite.config.ts.
+// DEV-ONLY: runs in Node alongside `npm run dev`; the RP signing key + relayer key never reach the
+// browser bundle (no VITE_ prefix). Two endpoints:
+//
+//   POST /api/world/context  → signs a fresh rp_context (nonce + RP signature) with the RP signing
+//                              key, so the browser's IDKit request is bound to a nonce World will
+//                              accept. (World ID 4.0 requires this; idkit cannot fabricate it.)
+//   POST /api/verify         → forwards the v4 proof to World's /api/v4/verify/{rp_id} (real ZK +
+//                              nullifier check), then mints the ERC-8004 passport via a relayer.
+//
+// On Arc there is no in-contract World ID verifier (docs/05), so validation happens here — which the
+// World ID track permits. The on-chain MockWorldID rubber-stamps the mint; the passport is keyed by
+// the REAL RP-scoped nullifier so anti-respawn still binds to the verified human.
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { verifyCloudProof } from "@worldcoin/idkit-core/backend";
-import { createWalletClient, http, decodeAbiParameters, defineChain, type Address, type Hex } from "viem";
+import { signRequest } from "@worldcoin/idkit-server";
+import { createWalletClient, http, defineChain, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { passportRegistryAbi } from "../src/abis/passportRegistry";
 
-/// The subset of the IDKit ISuccessResult we forward. Typed locally so this Node module never has to
-/// import the React idkit package.
-interface WorldProof {
-  merkle_root: string;
-  nullifier_hash: string;
-  proof: string;
-  verification_level: string;
+// World's cloud verify host (same origin idkit used historically). Override with WORLD_API_BASE.
+const WORLD_API = (envBase?: string) => envBase || "https://developer.worldcoin.org";
+
+interface Env {
+  APP_ID?: `app_${string}`;
+  ACTION: string;
+  RP_ID?: string;
+  RP_SIGNING_KEY?: string; // the RP's registered signer key (signs the nonce)
+  RELAYER_PK?: Hex; // mints the passport on-chain (local devnet: anvil #0)
+  PASSPORT?: Address;
+  RPC: string;
+  WORLD_API_BASE?: string;
 }
 
-export function createVerifyHandler(env: Record<string, string>) {
-  const APP_ID = env.VITE_WORLD_APP_ID as `app_${string}` | undefined;
-  const ACTION = env.VITE_WORLD_ACTION_ID || "mint-credit-passport";
-  const RELAYER_PK = env.RELAYER_PRIVATE_KEY as Hex | undefined;
-  const PASSPORT = env.VITE_PASSPORT_REGISTRY_ADDRESS as Address | undefined;
-  const RPC = env.VITE_ARC_RPC_URL || "http://127.0.0.1:8545";
+function readEnv(env: Record<string, string>): Env {
+  return {
+    APP_ID: env.VITE_WORLD_APP_ID as `app_${string}` | undefined,
+    ACTION: env.VITE_WORLD_ACTION_ID || "mint-credit-passport",
+    RP_ID: env.VITE_WORLD_RP_ID,
+    RP_SIGNING_KEY: env.WORLD_RP_SIGNING_KEY,
+    RELAYER_PK: env.RELAYER_PRIVATE_KEY as Hex | undefined,
+    PASSPORT: env.VITE_PASSPORT_REGISTRY_ADDRESS as Address | undefined,
+    RPC: env.VITE_ARC_RPC_URL || "http://127.0.0.1:8545",
+    WORLD_API_BASE: env.WORLD_API_BASE,
+  };
+}
 
-  // Arc testnet chain id is 5042002; for the local devnet RPC points at anvil on the same id.
+/// POST /api/world/context — mint a signed rp_context for the browser's IDKit request.
+export function createContextHandler(rawEnv: Record<string, string>) {
+  const env = readEnv(rawEnv);
+  return async function handle(_req: IncomingMessage, res: ServerResponse) {
+    try {
+      if (!env.APP_ID || !env.RP_ID || !env.RP_SIGNING_KEY) {
+        return json(res, 500, { ok: false, error: "Server missing VITE_WORLD_APP_ID / VITE_WORLD_RP_ID / WORLD_RP_SIGNING_KEY" });
+      }
+      const sig = signRequest({ signingKeyHex: env.RP_SIGNING_KEY, action: env.ACTION });
+      const rp_context = {
+        rp_id: env.RP_ID,
+        nonce: sig.nonce,
+        created_at: sig.createdAt,
+        expires_at: sig.expiresAt,
+        signature: sig.sig,
+      };
+      return json(res, 200, { ok: true, rp_context, app_id: env.APP_ID, action: env.ACTION });
+    } catch (e: unknown) {
+      return json(res, 500, { ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  };
+}
+
+/// POST /api/verify — verify the v4 proof with World, then mint the passport.
+export function createVerifyHandler(rawEnv: Record<string, string>) {
+  const env = readEnv(rawEnv);
   const arc = defineChain({
     id: 5042002,
     name: "Arc Testnet",
     nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
-    rpcUrls: { default: { http: [RPC] } },
+    rpcUrls: { default: { http: [env.RPC] } },
   });
 
   return async function handle(req: IncomingMessage, res: ServerResponse) {
     try {
-      if (!APP_ID) return json(res, 500, { ok: false, error: "Server missing VITE_WORLD_APP_ID" });
+      if (!env.RP_ID) return json(res, 500, { ok: false, error: "Server missing VITE_WORLD_RP_ID" });
+      const body = (await readJson(req)) as { result?: Record<string, unknown>; signal?: Address };
+      const { result, signal } = body;
+      if (!result || !signal) return json(res, 400, { ok: false, error: "missing result or signal" });
 
-      const body = (await readJson(req)) as { proof?: WorldProof; signal?: Address };
-      const { proof, signal } = body;
-      if (!proof || !signal) return json(res, 400, { ok: false, error: "missing proof or signal" });
-
-      // 1 + 2: REAL World ID verification (proof + nullifier) against World's cloud API. The signal
-      // (wallet address) is hashed by verifyCloudProof and must match what IDKit signed in the browser.
-      const verify = await verifyCloudProof(proof as Parameters<typeof verifyCloudProof>[0], APP_ID, ACTION, signal);
-      if (!verify.success) {
-        return json(res, 400, { ok: false, error: `World verify failed: ${verify.code ?? "unknown"}`, detail: verify.detail });
+      // 1: REAL World ID 4.0 verification. The IDKitResultV4 already has the exact shape the verify
+      // endpoint wants (protocol_version, nonce, action, environment, responses[]).
+      const vres = await fetch(`${WORLD_API(env.WORLD_API_BASE)}/api/v4/verify/${env.RP_ID}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(result),
+      });
+      const vdata = (await vres.json()) as { success?: boolean; nullifier?: string; code?: string; detail?: string };
+      if (!vres.ok || !vdata.success) {
+        return json(res, 400, { ok: false, error: `World verify failed: ${vdata.code ?? vres.status}`, detail: vdata.detail });
       }
 
-      // 3: mint the passport on-chain via the relayer (it pays gas). Trust now rests on step 2.
-      if (!RELAYER_PK || !PASSPORT) {
+      // 2: mint the passport on-chain via the relayer. Key it by the REAL RP-scoped nullifier so the
+      // anti-respawn mapping binds to the verified human (MockWorldID ignores the proof args on Arc).
+      if (!env.RELAYER_PK || !env.PASSPORT) {
         return json(res, 500, { ok: false, error: "Server missing RELAYER_PRIVATE_KEY or VITE_PASSPORT_REGISTRY_ADDRESS" });
       }
-      const account = privateKeyToAccount(RELAYER_PK);
-      const wallet = createWalletClient({ account, chain: arc, transport: http(RPC) });
+      const responses = (result.responses as Array<{ nullifier?: string }> | undefined) ?? [];
+      const nullifierHex = vdata.nullifier ?? responses[0]?.nullifier;
+      if (!nullifierHex) return json(res, 502, { ok: false, error: "verify ok but no nullifier returned" });
 
-      const root = BigInt(proof.merkle_root);
-      const nullifierHash = BigInt(proof.nullifier_hash);
-      const proofArr = decodeAbiParameters([{ type: "uint256[8]" }], proof.proof as Hex)[0] as readonly bigint[];
-
+      const account = privateKeyToAccount(env.RELAYER_PK);
+      const wallet = createWalletClient({ account, chain: arc, transport: http(env.RPC) });
+      const emptyProof = [0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n] as const;
       const txHash = await wallet.writeContract({
-        address: PASSPORT,
+        address: env.PASSPORT,
         abi: passportRegistryAbi,
         functionName: "verifyAndMint",
-        args: [signal, root, nullifierHash, proofArr],
+        args: [signal, 0n, BigInt(nullifierHex), emptyProof],
       });
 
-      return json(res, 200, { ok: true, txHash });
+      return json(res, 200, { ok: true, txHash, nullifier: nullifierHex });
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      return json(res, 500, { ok: false, error: message });
+      return json(res, 500, { ok: false, error: e instanceof Error ? e.message : String(e) });
     }
   };
 }
