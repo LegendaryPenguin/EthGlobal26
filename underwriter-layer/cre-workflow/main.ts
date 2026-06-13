@@ -74,6 +74,55 @@ const onLoanApplication = (
 }
 
 // ---------------------------------------------------------------------------
+// Unified HTTP Router
+// ---------------------------------------------------------------------------
+// The Chainlink CRE exposes a single webhook URL per workflow.
+// We route incoming HTTP requests based on their payload structure.
+
+const unifiedHttpRouter = (
+  runtime: Runtime<Config>,
+  triggerEvent: HTTPPayload,
+): string => {
+  let rawBody = ""
+  const inputObj = (triggerEvent as any).input
+  if (inputObj && Array.isArray(inputObj.data)) {
+    rawBody = new TextDecoder().decode(new Uint8Array(inputObj.data))
+  } else if (inputObj instanceof Uint8Array) {
+    rawBody = new TextDecoder().decode(inputObj)
+  } else if (typeof inputObj === "string") {
+    rawBody = inputObj
+  } else {
+    rawBody = JSON.stringify((triggerEvent as any).body ?? triggerEvent)
+  }
+
+  let body: any = {}
+  try {
+    body = JSON.parse(rawBody)
+  } catch (e) {
+    body = rawBody
+  }
+
+  runtime.log(`Raw Body typeof: ${typeof rawBody}, value: ${rawBody.substring(0, 200)}`)
+
+  // Sometimes HTTP triggers parse the JSON body automatically into `triggerEvent.body`
+  const actualBody = (triggerEvent as any).body ? (typeof (triggerEvent as any).body === 'string' ? JSON.parse((triggerEvent as any).body) : (triggerEvent as any).body) : body;
+  const payloadToRoute = actualBody.input ? actualBody.input : actualBody;
+  
+  runtime.log(`Payload keys: ${Object.keys(payloadToRoute).join(', ')}`)
+
+  if (payloadToRoute.borrower_wallet) {
+    // It's a Loan Application
+    return onLoanApplication(runtime, triggerEvent)
+  } else if (payloadToRoute.id && payloadToRoute.status) {
+    // It's an AI Inference Callback
+    return processInferenceCallback(runtime, triggerEvent)
+  } else {
+    runtime.log(`Unknown payload format received`)
+    return JSON.stringify({ error: "unknown_payload_format" })
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Workflow init
 // ---------------------------------------------------------------------------
 
@@ -83,12 +132,8 @@ const initWorkflow = (config: Config) => {
   return [
     handler(
       http.trigger({ authorizedKeys: config.authorizedKeys }),
-      onLoanApplication,
-    ),
-    handler(
-      http.trigger({ authorizedKeys: config.authorizedKeys }),
-      processInferenceCallback,
-    ),
+      unifiedHttpRouter,
+    )
   ]
 }
 

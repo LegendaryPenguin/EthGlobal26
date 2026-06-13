@@ -13,7 +13,11 @@ Frontend  →  CRE HTTP Trigger  →  Validate Identity (World ID + ZK)
 
 ### What's Confidential
 
-The TEE protects the **identity-to-wallet graph** — the association between a verified human (World ID nullifier) and their wallet addresses + on-chain history. Wallet data is public on-chain, but linking it to a real human is the sensitive part. Only the anonymized lending decision leaves the enclave:
+The TEE protects the **identity-to-wallet graph** — the association between a verified human (World ID) and their wallet addresses + on-chain history. Wallet data is public on-chain, but linking it to a real human is the sensitive part. 
+
+**Hackathon Architecture Note:** In production, the frontend uses the Nitro Enclave's public key to RSA-encrypt the World ID into an `encrypted_identity_blob`. Because the beta hackathon API does not yet expose the `/v1/key` endpoint, the frontend *mocks* this encryption by Base64-encoding the World ID. The Chainlink workflow passes this opaque blob to the AI Attester, and the AI prompt instructs the LLM to Base64-decode it before running inference!
+
+Only the anonymized lending decision leaves the enclave:
 
 ```json
 {
@@ -58,15 +62,16 @@ underwriter-layer/
 ## Pipeline
 
 ```
-validate(identity) → scoreWallets(evm) → attest(ai) → settle(evm)
+Unified HTTP Router -> validate(identity) -> scoreWallets(evm) -> attest(ai) -> settle(evm)
 ```
 
 | Module | Capability | What It Does |
 |--------|-----------|--------------|
-| **identity** | Pure logic | Validates World ID nullifier + ZK eligibility proof |
-| **wallet-score** | `EVMClient` | Reads USDC balances on-chain, merges with frontend context |
-| **attest** | `HTTPClient` (sendRequest) | Sends wallet profile to Confidential AI Attester in TEE |
-| **settle** | `EVMClient` (writeReport) | ABI-encodes decision, writes to CreditRegistry on-chain |
+| **Unified Router** | `HTTPTrigger` | Single webhook endpoint that routes payload to Loan App or Callback |
+| **identity** | Pure logic | Validates the `encrypted_identity_blob` is present |
+| **wallet-score** | `EVMClient` | Reads USDC balances on-chain for the provided wallets |
+| **attest** | `HTTPClient` | Sends wallet profile + encrypted identity to Confidential AI Enclave |
+| **settle** | `EVMClient` | ABI-encodes decision, writes to CreditRegistry on-chain |
 
 ## Prerequisites
 
@@ -92,31 +97,28 @@ cd contracts && forge install foundry-rs/forge-std --no-commit && cd ..
 
 ## Simulation
 
-### Heartbeat (cron)
+### End-to-End Local Testing (with Ngrok)
+
+To test the full loop locally, you can use the `--listen` server and Ngrok to receive the AI callback:
+
+1. Run `ngrok http 2000` to get a public URL.
+2. Update `creCallbackUrl` in `config.staging.json` to `https://<your-ngrok-url>.ngrok-free.dev/trigger`.
+3. Start the simulator:
 ```bash
-cre workflow simulate cre-workflow --target staging-settings
+cre workflow simulate cre-workflow --target staging-settings --listen
 ```
-
-### Loan Application (HTTP trigger)
-
-*(Note: If using Windows PowerShell, you may need to condense the JSON payload into a single line or escape double quotes `\"` instead of wrapping in single quotes).*
-
-```bash
-cre workflow simulate cre-workflow \
-  --non-interactive --trigger-index 1 \
-  --http-payload '{
+4. Fire the loan application from PowerShell:
+```powershell
+Invoke-RestMethod -Uri "http://localhost:2000/trigger" -Method Post -ContentType "application/json" -Body '{
+  "input": {
     "borrower_wallet": "0x1234567890abcdef1234567890abcdef12345678",
     "wallet_addresses": ["0x1234567890abcdef1234567890abcdef12345678"],
-    "world_id_nullifier": "0x0000000000000000000000000000000000000000000000000000000000abc123",
-    "zk_eligibility_proof_valid": true,
-    "wallet_context": {
-      "wallet_age_days": 365,
-      "total_transactions": 150,
-      "defi_protocols_used": ["Uniswap", "Aave"]
-    }
-  }' \
-  --target staging-settings
+    "encrypted_identity_blob": "MHgwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDBhYmMxMjM="
+  }
+}'
 ```
+
+The CLI will trigger the workflow, pass the Base64 string to the real AWS Nitro Enclave, and when the AI is done, the Enclave will POST the result back to your Ngrok URL, triggering the final callback step on your local machine!
 
 ## Contract Tests
 
@@ -126,15 +128,14 @@ cd contracts && forge test -vvv
 
 ## On-Chain Report Schema
 
-```
-(address borrower, bool approved, uint256 principalUsdc, bytes32 tranche, bytes32 riskBand, bytes32 worldIdNullifier)
+```solidity
+(address borrower, bool approved, string reason, bytes32 transcriptHash, string inferenceId)
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `borrower` | `address` | Destination wallet |
 | `approved` | `bool` | AI lending decision |
-| `principalUsdc` | `uint256` | Loan amount (6 decimals) |
-| `tranche` | `bytes32` | `"Senior"` or `"Junior"` |
-| `riskBand` | `bytes32` | `"A"`, `"B"`, `"C"`, or `"D"` |
-| `worldIdNullifier` | `bytes32` | World ID unique identifier |
+| `reason` | `string` | The risk band (e.g. "A", "B", "C", "D") |
+| `transcriptHash` | `bytes32` | Cryptographic hash of the AI's full transcript (for verification) |
+| `inferenceId` | `string` | The UUID from the Confidential AI Attester |

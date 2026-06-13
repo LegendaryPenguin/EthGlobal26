@@ -19,8 +19,10 @@ export function buildClassificationPrompt(profile: WalletProfile, encryptedIdent
   return (
     `You have received an encrypted identity blob from the frontend:\n` +
     `${encryptedIdentityBlob}\n\n` +
-    `[ENCLAVE INSTRUCTION: Decrypt the blob above using your private key to verify the user's WorldID. ` +
-    `If the ZK proof is valid, proceed with evaluating the on-chain balances below.]\n\n` +
+    `[ENCLAVE INSTRUCTION: In production, you would decrypt this RSA ciphertext using your TEE private key. ` +
+    `Because this is a hackathon demo without the key endpoint, the frontend has simply Base64-encoded the WorldID string. ` +
+    `Please Base64-decode the blob above to verify the user's WorldID is present. ` +
+    `Once verified, proceed with evaluating the on-chain balances below.]\n\n` +
     `Given the following on-chain wallet profile:\n\n` +
     `${profileJson}\n\n` +
     `Classify this borrower for an undercollateralized credit facility.\n` +
