@@ -1,0 +1,16 @@
+{
+  "name": "circuits",
+  "version": "1.0.0",
+  "description": "Stage 5. The **privacy gate before underwriting**: the borrower proves a fact (income ≥ threshold\r AND not on a default list) without revealing the figure. Distinct from the Confidential AI — this\r is a self-sovereign *claim*; the AI is an independent *judgment*. See `docs/05`.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@noir-lang/backend_barretenberg": "^0.36.0",
+    "@noir-lang/noir_js": "^1.0.0-beta.22"
+  }
+}
