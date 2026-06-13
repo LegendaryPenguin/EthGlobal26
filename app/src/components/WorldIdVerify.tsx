@@ -105,7 +105,7 @@ export function WorldIdVerify() {
         setTxHash(data.txHash);
         setStatus("done");
       } else {
-        setError(data.detail ? `${data.error} (${data.detail})` : data.error ?? "verification failed");
+        setError(data.detail ?? data.error ?? "verification failed");
         setStatus("error");
       }
     } catch (e) {

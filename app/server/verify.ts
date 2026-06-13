@@ -119,7 +119,17 @@ export function createVerifyHandler(rawEnv: Record<string, string>) {
 
       return json(res, 200, { ok: true, txHash, nullifier: nullifierHex });
     } catch (e: unknown) {
-      return json(res, 500, { ok: false, error: e instanceof Error ? e.message : String(e) });
+      const message = e instanceof Error ? e.message : String(e);
+      // Anti-respawn money-shot: World verified a real human, but the on-chain mint reverts because
+      // this human defaulted before and is locked out — a fresh wallet can't escape it.
+      if (message.includes("HumanLockedOut")) {
+        return json(res, 403, {
+          ok: false,
+          error: "locked_out",
+          detail: "This human defaulted on a prior loan and is locked out network-wide. A new wallet can't escape it.",
+        });
+      }
+      return json(res, 500, { ok: false, error: message });
     }
   };
 }
