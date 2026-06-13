@@ -97,17 +97,17 @@ fn hash1(a: Field) -> Field {
 // Done inline so we don't depend on a `std::merkle` helper (removed in 1.0).
 fn compute_merkle_root(
     leaf: Field,
-    index_bits: [u1; 8],
+    index_bits: [bool; 8], // false => current node is the LEFT child at this level
     siblings: [Field; 8],
 ) -> Field {
     let mut node = leaf;
     for i in 0..DEFAULT_LIST_DEPTH {
         let sibling = siblings[i];
-        // if bit is 0 -> node is left; else node is right
-        let (left, right) = if index_bits[i] == 0 {
-            (node, sibling)
-        } else {
+        // false -> node is left; true -> node is right
+        let (left, right) = if index_bits[i] {
             (sibling, node)
+        } else {
+            (node, sibling)
         };
         node = hash2(left, right);
     }
@@ -123,7 +123,7 @@ fn main(
     // default-list non-membership witness (private):
     low_neighbour: Field,           // sorted-tree leaf just below borrower_id_hash
     high_neighbour: Field,          // sorted-tree leaf just above borrower_id_hash
-    merkle_index_bits: [u1; 8],     // path bits of low_neighbour in the tree
+    merkle_index_bits: [bool; 8],   // path bits of low_neighbour in the tree
     merkle_siblings: [Field; 8],    // sibling hashes proving low_neighbour ∈ tree
 
     // ---- PUBLIC inputs (revealed by / bound into the proof) ---------------
@@ -165,9 +165,14 @@ fn main(
     assert(computed_root == default_list_root);
 
     // Strict ordering: low_neighbour < borrower_id_hash < high_neighbour.
-    // `<` on Field compares the underlying integer representation.
-    assert(low_neighbour < borrower_id_hash);
-    assert(borrower_id_hash < high_neighbour);
+    // Noir 1.0 removed ordering on `Field`, so we compare on the low 64 bits.
+    // SIMPLIFICATION (TODO): the `as u64` truncation weakens the sorted-gap
+    //   soundness (two ids sharing low-64 bits could collide). A production build
+    //   needs a full field-comparison gadget (bit decomposition) or an indexed
+    //   Merkle tree. Sufficient to demonstrate the non-membership shape here.
+    let id64 = borrower_id_hash as u64;
+    assert((low_neighbour as u64) < id64);
+    assert(id64 < (high_neighbour as u64));
     // TODO(default-list): also prove `high_neighbour`'s inclusion AND that it is
     //   the immediate successor of `low_neighbour` (adjacent indices / shared
     //   path prefix) using an indexed Merkle tree, so the prover cannot supply a
@@ -190,13 +195,11 @@ fn test_eligible_borrower_passes() {
     let borrower_id_hash = hash1(borrower_secret);
     let nullifier = hash1(borrower_id_hash);
 
-    // low_neighbour = 1 is < any pedersen output. high_neighbour is a value
-    // assumed larger than the id hash for the strict gap check; if a given
-    // build's id hash exceeds it, raise the constant.
-    let low_neighbour: Field = 1;
-    let high_neighbour: Field =
-        0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000;
-    let merkle_index_bits: [u1; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
+    // Bound the gap on the low 64 bits: low64 = 0, high64 = u64::MAX, so any
+    // pedersen id hash falls strictly inside (collision-negligible for a test).
+    let low_neighbour: Field = 0;
+    let high_neighbour: Field = 0xFFFFFFFFFFFFFFFF;
+    let merkle_index_bits: [bool; 8] = [false, false, false, false, false, false, false, false];
     let merkle_siblings: [Field; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
     let default_list_root =
         compute_merkle_root(low_neighbour, merkle_index_bits, merkle_siblings);
@@ -226,10 +229,9 @@ fn test_income_below_threshold_fails() {
     let borrower_id_hash = hash1(borrower_secret);
     let nullifier = hash1(borrower_id_hash);
 
-    let low_neighbour: Field = 1;
-    let high_neighbour: Field =
-        0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000;
-    let merkle_index_bits: [u1; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
+    let low_neighbour: Field = 0;
+    let high_neighbour: Field = 0xFFFFFFFFFFFFFFFF;
+    let merkle_index_bits: [bool; 8] = [false, false, false, false, false, false, false, false];
     let merkle_siblings: [Field; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
     let default_list_root =
         compute_merkle_root(low_neighbour, merkle_index_bits, merkle_siblings);

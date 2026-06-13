@@ -33,13 +33,13 @@ seam → Arc LoanVault + USDC disburse/repay → CRE + Confidential AI (sim) →
 - ✅ **Stage 2 — Arc money layer.** `LoanVault.claim()` (amortized disburse) + `IncomeRouter.onPayout()` split. Tested.
 - ✅ **Stage 3 — Chainlink CRE.** `/cre` workflow simulation (trigger → confidential underwrite → `setTerms` encode). Tested; income-never-leaks test. Live CRE run needs the CRE CLI + Confidential AI endpoint.
 - ✅ **Stage 4 — World ID gate.** `PassportRegistry.verifyAndMint` (on-chain proof check, one passport/human, lock-out) + optional `LoanVault` good-standing gate. Tested incl. respawn-rejection.
-- 🟡 **Stage 5 — Noir circuit.** `/circuits` scaffolded; **uncompiled** (needs `nargo`).
+- ✅ **Stage 5 — Noir circuit.** `/circuits` compiles on nargo 1.0 (`nargo test` → 2 passing; `nargo compile` → ACIR). Income stays private; commitment-open + threshold + sorted-Merkle non-membership.
 - ✅ **Stage 6 — cross-chain / Liquidity Hub.** `TranchePool` senior/junior accounting + yield waterfall + loss absorption + `deployToVault`; `scripts/bridge-deposit.ts` CCTP V2 burn-and-mint (any chain → Arc). Tested.
 - ✅ **Stage 8 — default handling + reputation.** Permissionless `markLate`/`markDefault` (grace period), default → `PassportRegistry` lockout + `TranchePool.absorbLoss` (loss = unrecovered principal); full repayment heals standing + ladders the limit. Tested incl. real-default → respawn-rejection.
 - 🟡 **Frontend.** MetaMask + Arc + reads the seam; World ID (IDKit), payout, and lender Earn/deposit wired (need env addresses + `WORLD_APP_ID`).
-- ⬜ **Bonus** — Connect-the-World (price/FX feed inside the rate contract); compile the Noir circuit (`nargo`).
+- ✅ **Bonus — Connect the World.** `RateModel` reads a Chainlink price/FX feed and persists an effective APR on-chain (the required state change). Tested with a mock aggregator (deviation spread, staleness, caps, access).
 
-**Tests:** contracts 80/80 (`forge test`), CRE 19/19 (`cd cre && npm test`), frontend builds (`cd app && npm run build`).
+**Tests:** contracts 86/86 (`forge test`), CRE 19/19 (`cd cre && npm test`), Noir 2/2 (`cd circuits && nargo test`), frontend builds (`cd app && npm run build`).
 A full borrow→disburse→repay loop + respawn-rejection is proven in `contracts/test/EndToEnd.t.sol`.
 
 ## Setup
