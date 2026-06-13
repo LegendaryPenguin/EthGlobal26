@@ -39,6 +39,7 @@ const WORLD_API = (base?: string) => base || "https://developer.worldcoin.org";
 interface Env {
   APP_ID?: `app_${string}`;
   RP_ID?: string;
+  ACTION: string; // World action; required for proof-of-human (uniqueness) verification
   RP_SIGNING_KEY?: Hex; // also the managed-wallet derivation secret
   RELAYER_PK?: Hex; // mints/seeds (forwarder = deployer) + funds gas
   PASSPORT?: Address;
@@ -53,6 +54,7 @@ function readEnv(env: Record<string, string>): Env {
   return {
     APP_ID: env.VITE_WORLD_APP_ID as `app_${string}` | undefined,
     RP_ID: env.VITE_WORLD_RP_ID,
+    ACTION: env.VITE_WORLD_ACTION_ID || "mint-credit-passport",
     RP_SIGNING_KEY: env.WORLD_RP_SIGNING_KEY as Hex | undefined,
     RELAYER_PK: env.RELAYER_PRIVATE_KEY as Hex | undefined,
     PASSPORT: env.VITE_PASSPORT_REGISTRY_ADDRESS as Address | undefined,
@@ -79,8 +81,11 @@ export function createSessionContextHandler(raw: Record<string, string>) {
   return async (_req: IncomingMessage, res: ServerResponse) => {
     try {
       if (!env.RP_ID || !env.RP_SIGNING_KEY) return json(res, 500, { ok: false, error: "missing RP config" });
-      const sig = signRequest({ signingKeyHex: env.RP_SIGNING_KEY }); // no action → session
-      return json(res, 200, { ok: true, rp_context: { rp_id: env.RP_ID, nonce: sig.nonce, created_at: sig.createdAt, expires_at: sig.expiresAt, signature: sig.sig }, app_id: env.APP_ID });
+      // Sign WITH the action: this World app/RP requires an action for proof-of-human (uniqueness)
+      // verification (verify returns "action is required for uniqueness proofs" otherwise). An
+      // action-scoped nullifier is also the right model for a credit passport (one per human).
+      const sig = signRequest({ signingKeyHex: env.RP_SIGNING_KEY, action: env.ACTION });
+      return json(res, 200, { ok: true, rp_context: { rp_id: env.RP_ID, nonce: sig.nonce, created_at: sig.createdAt, expires_at: sig.expiresAt, signature: sig.sig }, app_id: env.APP_ID, action: env.ACTION });
     } catch (e) {
       return json(res, 500, { ok: false, error: errMsg(e) });
     }
@@ -106,9 +111,13 @@ export function createSigninHandler(raw: Record<string, string>) {
       console.log(`[world] /api/world/signin → verify HTTP ${vres.status}`, JSON.stringify(vdata));
       if (!vres.ok || !vdata.success) return json(res, 400, { ok: false, error: `World sign-in failed: ${vdata.code ?? vres.status}`, detail: vdata.detail });
 
-      const responses = (result.responses as Array<{ session_nullifier?: string[] }>) ?? [];
-      const sessionNullifier = responses[0]?.session_nullifier?.[0];
-      if (!sessionNullifier) return json(res, 502, { ok: false, error: "no session_nullifier in proof" });
+      // Action-scoped proofs return `nullifier` (one per human per action); sessions returned
+      // `session_nullifier`. Accept either, plus the top-level verify nullifier, so the managed-wallet
+      // derivation has a stable per-human key regardless of credential type.
+      const responses = (result.responses as Array<{ session_nullifier?: string[]; nullifier?: string }>) ?? [];
+      const vnull = (vdata as { nullifier?: string }).nullifier;
+      const sessionNullifier = responses[0]?.session_nullifier?.[0] ?? responses[0]?.nullifier ?? vnull;
+      if (!sessionNullifier) return json(res, 502, { ok: false, error: "no nullifier in proof" });
 
       // 2. Provision the human's custodial wallet + relayer mints/seeds on first sight.
       const wallet = managedAccount(sessionNullifier, env.RP_SIGNING_KEY).address;
