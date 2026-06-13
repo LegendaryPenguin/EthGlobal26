@@ -44,6 +44,23 @@ Arc machine-readable index: `https://docs.arc.io/llms.txt`
 Notes: USDC is **native** on Arc (a system contract address) — that's why it can pay gas. Gas is
 ~$0.009/tx, dollar-denominated. Arc also has a built-in FX engine (StableFX) and a Paymaster.
 
+### Verified Arc Testnet addresses (domain 26)
+Pulled live via the Circle MCP server on 2026-06-13. These are also wired into `.env`. Still treat
+the address pages / MCP as source of truth — re-verify before mainnet (there is no Arc mainnet yet).
+
+| Contract | Address |
+| --- | --- |
+| USDC (ERC-20, 6 decimals) | `0x3600000000000000000000000000000000000000` |
+| EURC | `0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a` |
+| CCTP V2 `TokenMessengerV2` | `0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA` |
+| CCTP V2 `MessageTransmitterV2` | `0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275` |
+| Gateway `GatewayWallet` | `0x0077777d7EBA4688BDeF3E311b846F25870A19B9` |
+| Gateway `GatewayMinter` | `0x0022222ABE238Cc2C7Bb1f21003F0a260052475B` |
+
+CCTP V2 reminder: `depositForBurn()` now takes `destinationCaller` (bytes32), `maxFee` (uint256),
+and `minFinalityThreshold` (uint32 — `1000` Fast, `2000` Standard). Prefer the **Bridge Kit SDK**
+over raw contract calls (Circle's current recommendation; Fast by default).
+
 ## USDC / EURC
 - Use the per-chain address pages; never hardcode:
   - USDC: `https://developers.circle.com/stablecoins/usdc-contract-addresses`
