@@ -27,13 +27,18 @@ seam → Arc LoanVault + USDC disburse/repay → CRE + Confidential AI (sim) →
 (in-contract) → Noir eligibility → cross-chain deposit (Gateway/CCTP) → frontend + payout dashboard
 → senior/junior tranches → polish + demo.
 
-## Current scaffold status
-- ✅ **Stage 1 — the seam.** `LoanRegistry` (frozen `Terms` struct, `setTerms` onlyForwarder,
-  `getTerms`) + interface + tests + deploy script. **Build against `ILoanRegistry`; don't change
-  the struct without a coordinated re-freeze.**
-- 🟡 **Stubs** for `LoanVault`, `IncomeRouter`, `TranchePool`, `PassportRegistry` — compile and
-  carry the invariants/TODOs for their stages.
-- ⬜ `/cre`, `/circuits`, `/app`, `/scripts` — READMEs with track requirements + links; no code yet.
+## Current status (per stage)
+- ✅ **Stage 0 — foundations.** viem Arc check (`scripts/check-arc.ts`); connects live, asserts chain 5042002.
+- ✅ **Stage 1 — the seam.** `LoanRegistry` frozen + tested. **Build against `ILoanRegistry`; don't change the struct without a re-freeze.**
+- ✅ **Stage 2 — Arc money layer.** `LoanVault.claim()` (amortized disburse) + `IncomeRouter.onPayout()` split. Tested.
+- ✅ **Stage 3 — Chainlink CRE.** `/cre` workflow simulation (trigger → confidential underwrite → `setTerms` encode). Tested; income-never-leaks test. Live CRE run needs the CRE CLI + Confidential AI endpoint.
+- ✅ **Stage 4 — World ID gate.** `PassportRegistry.verifyAndMint` (on-chain proof check, one passport/human, lock-out) + optional `LoanVault` good-standing gate. Tested incl. respawn-rejection.
+- 🟡 **Stage 5 — Noir circuit.** `/circuits` scaffolded; **uncompiled** (needs `nargo`).
+- 🟡 **Frontend.** MetaMask + Arc + reads the seam; World ID (IDKit) + payout wired (need env addresses + `WORLD_APP_ID`).
+- ⬜ **Stage 6** cross-chain deposits · **Stage 8** tranche yield + default-state wiring.
+
+**Tests:** contracts 32/32 (`forge test`), CRE 19/19 (`cd cre && npm test`), frontend builds (`cd app && npm run build`).
+A full borrow→disburse→repay loop + respawn-rejection is proven in `contracts/test/EndToEnd.t.sol`.
 
 ## Setup
 ```bash
