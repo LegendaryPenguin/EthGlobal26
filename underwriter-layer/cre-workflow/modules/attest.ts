@@ -8,7 +8,8 @@ import { SYSTEM_PROMPT, buildClassificationPrompt } from "../prompts"
 export function assessAndClassify(
   runtime: Runtime<Config>,
   profile: WalletProfile,
-  encryptedIdentityBlob: string
+  encryptedIdentityBlob: string,
+  borrowerWallet: string
 ): string {
   const apiKeySecret = runtime.getSecret({ id: "CONF_AI_API_KEY" } as any)
   const apiKeyObj = apiKeySecret.result()
@@ -24,7 +25,7 @@ export function assessAndClassify(
     const submitReqStr = JSON.stringify({
       model: runtime.config.confAiModel,
       system_prompt: SYSTEM_PROMPT,
-      prompt: buildClassificationPrompt(profile, encryptedIdentityBlob),
+      prompt: buildClassificationPrompt(profile, encryptedIdentityBlob, borrowerWallet),
       cre_callback: { url: runtime.config.creCallbackUrl }
     })
     

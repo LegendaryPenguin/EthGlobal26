@@ -7,7 +7,7 @@ export const SYSTEM_PROMPT =
   "on-chain wallet evidence. Never include wallet addresses, nullifiers, or " +
   "identifying information in your response."
 
-export function buildClassificationPrompt(profile: WalletProfile, encryptedIdentityBlob: string): string {
+export function buildClassificationPrompt(profile: WalletProfile, encryptedIdentityBlob: string, borrowerWallet: string): string {
   const profileJson = JSON.stringify(
     {
       wallet_count: profile.walletCount,
@@ -18,6 +18,7 @@ export function buildClassificationPrompt(profile: WalletProfile, encryptedIdent
   )
 
   return (
+    `Borrower wallet: ${borrowerWallet}\n\n` +
     `You have received an encrypted identity blob from the frontend:\n` +
     `${encryptedIdentityBlob}\n\n` +
     `[ENCLAVE INSTRUCTION: In production, you would decrypt this RSA ciphertext using your TEE private key. ` +

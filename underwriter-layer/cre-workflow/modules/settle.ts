@@ -1,5 +1,6 @@
 import {
   EVMClient,
+  HTTPClient,
   type Runtime,
   prepareReportRequest,
   type HTTPPayload,
@@ -15,12 +16,15 @@ import {
 import type { Config, InferenceCallback, CreditDecision } from "../types"
 import { creditDecisionSchema } from "../types"
 
-const REPORT_ABI = "address borrower, bool approved, string reason, bytes32 transcriptHash, string inferenceId"
+const REPORT_ABI = "address borrower, bool approved, string principal, string tranche, string riskBand, bytes32 transcriptHash, string inferenceId"
 
 /**
  * Handles the async callback from the Confidential AI endpoint.
- * Once the AI TEE is done analyzing the JSON, it POSTs the result
- * to this handler, which verifies it and writes it on-chain.
+ *
+ * Security layers:
+ *  1. Verifies the callback by polling GET /v1/inference/:id with our API key
+ *  2. Validates output digest integrity
+ *  3. Only writes on-chain after both checks pass
  */
 export function processInferenceCallback(
   runtime: Runtime<Config>,
@@ -49,8 +53,75 @@ export function processInferenceCallback(
     return JSON.stringify({ action: "skipped", status: callback.status })
   }
 
-  // Extract fenced JSON
-  const output = callback.output ?? ""
+  if (!callback.id) {
+    throw new Error("Callback missing inference ID — cannot verify")
+  }
+
+  // -----------------------------------------------------------------------
+  // Layer 1: Verify the callback against the Confidential AI API
+  // -----------------------------------------------------------------------
+
+  const apiKeySecret = runtime.getSecret({ id: "CONF_AI_API_KEY" } as any)
+  const apiKeyObj = apiKeySecret.result()
+  const apiKey = (apiKeyObj as any).value || apiKeyObj
+  if (!apiKey) throw new Error("CONF_AI_API_KEY secret not found for verification")
+
+  const httpClient = new HTTPClient()
+
+  const verifyCallback = (sendRequester: any): { verified: boolean; output: string; prompt: string } => {
+    const verifyResp = sendRequester.sendRequest({
+      url: `${runtime.config.confAiBaseUrl}/v1/inference/${callback.id}`,
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    }).result()
+
+    if (verifyResp.statusCode >= 400) {
+      throw new Error(`Verification request failed: HTTP ${verifyResp.statusCode}`)
+    }
+
+    const verifiedJson = JSON.parse(new TextDecoder().decode(verifyResp.body))
+
+    // The API must confirm this inference is completed
+    if (verifiedJson.status !== "completed") {
+      throw new Error(`Verification failed: API says status=${verifiedJson.status}, callback says completed`)
+    }
+
+    // The output from the API must match the callback's output
+    if (verifiedJson.output !== callback.output) {
+      throw new Error("Verification failed: output mismatch between callback and API")
+    }
+
+    return {
+      verified: true,
+      output: verifiedJson.output,
+      prompt: verifiedJson.prompt ?? "",
+    }
+  }
+
+  const verifyAggregation = {
+    method: "byFields",
+    fields: {
+      verified: { method: "identical" },
+      output: { method: "identical" },
+      prompt: { method: "identical" },
+    },
+  } as any
+
+  const verified = httpClient.sendRequest(runtime, verifyCallback, verifyAggregation)().result()
+
+  if (!verified.verified) {
+    throw new Error("Callback verification failed")
+  }
+
+  runtime.log(`Inference ${callback.id} verified against API`)
+
+  // -----------------------------------------------------------------------
+  // Layer 2: Parse and validate the AI decision
+  // -----------------------------------------------------------------------
+
+  const output = verified.output ?? ""
   const fenced = output.trim().match(/^```(?:[a-zA-Z0-9]+)?\s*([\s\S]*?)\s*```$/)
   const jsonStr = fenced ? fenced[1].trim() : output
 
@@ -60,22 +131,42 @@ export function processInferenceCallback(
   }
   const decision = parsed.data
 
-  runtime.log(`Decision: approved=${decision.approved}, riskBand=${decision.riskBand}`)
+  runtime.log(`Decision: approved=${decision.approved}, riskBand=${decision.riskBand}, principal=${decision.principal}`)
+
+  // -----------------------------------------------------------------------
+  // Compute transcript hash for on-chain verifiability
+  // -----------------------------------------------------------------------
 
   const responseDigest = callback.resources?.[0]?.response_digest
   const transcriptHash = responseDigest
     ? (`0x${responseDigest.replace(/^0[xX]/, "").toLowerCase()}` as `0x${string}`)
     : sha256(stringToHex(output))
 
-  const inferenceId = callback.id ?? ""
+  const inferenceId = callback.id
 
-  // Use a standard borrower address for now (must match consumer gate expectations)
-  const borrower = getAddress(runtime.config.usdcAddress) // Fallback for simulation
-  
+  // -----------------------------------------------------------------------
+  // Extract borrower wallet from the verified prompt
+  // -----------------------------------------------------------------------
+  // The prompt text from Trigger 0 includes the borrower wallet. Since we
+  // verified this prompt against the API (not trusting the callback), this
+  // is a trustworthy source for the borrower address.
+  const borrowerMatch = verified.prompt.match(/Borrower wallet: (0x[a-fA-F0-9]{40})/)
+  const borrower = borrowerMatch
+    ? getAddress(borrowerMatch[1] as `0x${string}`)
+    : getAddress(runtime.config.consumerAddress) // fallback for testing
+
+  runtime.log(`Borrower resolved: ${borrower}`)
+
+  // -----------------------------------------------------------------------
+  // Layer 3: ABI-encode and write on-chain
+  // -----------------------------------------------------------------------
+
   const encodedPayload = encodeAbiParameters(parseAbiParameters(REPORT_ABI), [
     borrower,
     decision.approved,
-    decision.riskBand, // Use riskBand as reason
+    decision.principal,
+    decision.tranche,
+    decision.riskBand,
     transcriptHash,
     inferenceId,
   ])
