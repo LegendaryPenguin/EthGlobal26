@@ -8,11 +8,10 @@ node_modules/
 dist/
 *.log
 
-# foundry
+# foundry (forge-std is tracked as a git submodule; foundry.lock pins deps)
 contracts/out/
 contracts/cache/
 contracts/broadcast/
-contracts/lib/
 
 # noir / provekit
 circuits/target/

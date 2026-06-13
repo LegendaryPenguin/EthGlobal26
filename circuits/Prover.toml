@@ -1,0 +1,33 @@
+# Example witness for `vouch_eligibility` (`nargo prove` / `nargo execute`).
+#
+# IMPORTANT — three public values are HASH OUTPUTS the circuit recomputes:
+#   * income_commitment = pedersen_hash([monthly_income, income_blinding])
+#   * default_list_root  = compute_merkle_root(low_neighbour, merkle_index_bits, merkle_siblings)
+#   * nullifier          = pedersen_hash([pedersen_hash([borrower_secret])])
+# You cannot hand-pick these; they must be the actual hash outputs for the
+# private values below. The placeholders here are STRUCTURALLY valid (right
+# types/shape) but the hash fields must be filled with the real outputs.
+#
+# Easiest way to get correct values: run `nargo test test_eligible_borrower_passes`
+# (the test computes everything self-consistently), or add a temporary
+# `std::println(recomputed_commitment)` in main and `nargo execute` to print them.
+# Then paste the printed field values into income_commitment / default_list_root.
+# See README.md "Filling Prover.toml".
+
+# ---- PRIVATE inputs (never revealed) ----
+monthly_income  = "5000"     # the secret income figure (kept private)
+income_blinding = "12345"    # blinding factor for the commitment
+borrower_secret = "777"      # borrower secret; id-hash + nullifier derive from it
+
+# default-list non-membership witness (sorted-neighbour proof):
+low_neighbour     = "1"      # proven leaf just below borrower_id_hash
+high_neighbour    = "0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000" # > id_hash
+merkle_index_bits = ["0", "0", "0", "0", "0", "0", "0", "0"]
+merkle_siblings   = ["0", "0", "0", "0", "0", "0", "0", "0"]
+
+# ---- PUBLIC inputs ----
+threshold         = "3000"   # affordability bar (income 5000 >= 3000 => passes)
+# >>> FILL THESE with the real hash outputs (see note above): <<<
+income_commitment = "0x0000000000000000000000000000000000000000000000000000000000000000"  # = pedersen_hash([5000, 12345])
+default_list_root = "0x0000000000000000000000000000000000000000000000000000000000000000"  # = compute_merkle_root(1, [0;8], [0;8])
+nullifier         = "0x0000000000000000000000000000000000000000000000000000000000000000"  # = pedersen_hash([pedersen_hash([777])])
