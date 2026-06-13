@@ -1,7 +1,7 @@
 // Vercel serverless function → POST /api/world/claim. Funds the human's managed wallet for gas and
 // signs LoanVault.claim() on their behalf.
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createClaimHandler } from "../../server/verify";
+import { createClaimHandler } from "../../server/verify.js";
 
 const handler = createClaimHandler(process.env as Record<string, string>);
 

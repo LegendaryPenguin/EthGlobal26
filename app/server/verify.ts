@@ -18,7 +18,7 @@ import {
   type Address, type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { underwrite } from "./underwrite";
+import { underwrite } from "./underwrite.js";
 
 const PASSPORT_ABI = [
   { type: "function", name: "verifyAndMint", stateMutability: "nonpayable", inputs: [{ name: "signal", type: "address" }, { name: "root", type: "uint256" }, { name: "nullifierHash", type: "uint256" }, { name: "proof", type: "uint256[8]" }], outputs: [] },

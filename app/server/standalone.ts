@@ -11,7 +11,7 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createSessionContextHandler, createSigninHandler, createClaimHandler } from "./verify";
+import { createSessionContextHandler, createSigninHandler, createClaimHandler } from "./verify.js";
 
 const require = createRequire(import.meta.url);
 const IDKIT_WASM = path.join(path.dirname(require.resolve("@worldcoin/idkit-core")), "idkit_wasm_bg.wasm");

@@ -1,7 +1,7 @@
 // Vercel serverless function → POST /api/world/signin. Verifies the World ID session proof, provisions
 // the human's managed wallet, mints/loads the passport, runs the underwriter, and writes terms.
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createSigninHandler } from "../../server/verify";
+import { createSigninHandler } from "../../server/verify.js";
 
 const handler = createSigninHandler(process.env as Record<string, string>);
 

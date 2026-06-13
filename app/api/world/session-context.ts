@@ -2,7 +2,7 @@
 // Reuses the shared handler; Vercel's req/res are Node http-compatible, and readJson() in verify.ts
 // handles Vercel's pre-parsed body. Secrets come from Vercel project env (WORLD_RP_SIGNING_KEY etc.).
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createSessionContextHandler } from "../../server/verify";
+import { createSessionContextHandler } from "../../server/verify.js";
 
 const handler = createSessionContextHandler(process.env as Record<string, string>);
 
