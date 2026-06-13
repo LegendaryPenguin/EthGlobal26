@@ -1,20 +1,9 @@
-import { useState } from "react";
 import { WalletBar } from "./components/WalletBar";
 import { BorrowTab } from "./components/BorrowTab";
-import { EarnTab } from "./components/EarnTab";
-import { PayoutTab } from "./components/PayoutTab";
 
-type Tab = "borrow" | "earn" | "payout";
-
-const TABS: { id: Tab; label: string }[] = [
-  { id: "borrow", label: "Borrow" },
-  { id: "earn", label: "Earn" },
-  { id: "payout", label: "Payout" },
-];
-
+/// Single-surface app: the borrower flow (World ID → terms → claim). The Earn (lender) and Payout
+/// surfaces were removed; the tranche/router contracts still exist on-chain for the demo scripts.
 export function App() {
-  const [tab, setTab] = useState<Tab>("borrow");
-
   return (
     <div className="page">
       <header className="header">
@@ -27,22 +16,8 @@ export function App() {
         <WalletBar />
       </header>
 
-      <nav className="tabs">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            className={t.id === tab ? "tab tab--active" : "tab"}
-            onClick={() => setTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
-
       <main className="main">
-        {tab === "borrow" && <BorrowTab />}
-        {tab === "earn" && <EarnTab />}
-        {tab === "payout" && <PayoutTab />}
+        <BorrowTab />
       </main>
 
       <footer className="footer">

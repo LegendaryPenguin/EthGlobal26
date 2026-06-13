@@ -44,9 +44,9 @@ function worldId(env: Record<string, string>): Plugin {
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
-  return {
-    plugins: [react(), worldId(env)],
-    // Keep idkit out of dep pre-bundling so `import.meta.url` resolves next to the real WASM file.
-    optimizeDeps: { exclude: ["@worldcoin/idkit", "@worldcoin/idkit-core"] },
-  };
+  // NOTE: idkit MUST stay pre-bundled (the default) — excluding it breaks the CJS→ESM interop for
+  // its `qrcode` dependency (white screen: "does not provide an export named 'default'"). The WASM
+  // is handled by the middleware above (matches the filename regardless of the bundled path), so we
+  // do NOT need optimizeDeps.exclude.
+  return { plugins: [react(), worldId(env)] };
 });
