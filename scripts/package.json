@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check-arc": "tsx check-arc.ts"
+    "check-arc": "tsx check-arc.ts",
+    "bridge-deposit": "tsx bridge-deposit.ts"
   },
   "dependencies": {
     "viem": "^2.21.0"
