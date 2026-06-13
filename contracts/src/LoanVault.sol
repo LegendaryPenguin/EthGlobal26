@@ -90,7 +90,7 @@ contract LoanVault {
 
     error NotApproved();
     error TermsExpired();
-    error AlreadyDisbursed();
+    error OutstandingDebt();
     error MissingAttestation();
     error ZeroPrincipal();
     error VaultUnderfunded();
@@ -156,7 +156,9 @@ contract LoanVault {
         if (t.expiry != 0 && block.timestamp > t.expiry) revert TermsExpired();
         if (t.attestationRef == bytes32(0)) revert MissingAttestation();
         if (t.principal == 0) revert ZeroPrincipal();
-        if (loans[msg.sender].disbursed) revert AlreadyDisbursed();
+        // Existing-debt gate (banking-style): no new loan while a prior one is still outstanding.
+        // After full repayment you may borrow again — the reputation ladder raises your next limit.
+        if (loans[msg.sender].disbursed && !loans[msg.sender].repaid) revert OutstandingDebt();
 
         // Stage 4 anti-respawn gate: a verified human in good standing. Skipped only when unset.
         if (passportRegistry != address(0) && !IPassportGate(passportRegistry).isInGoodStanding(msg.sender)) {

@@ -154,13 +154,14 @@ contract LoanVaultTest is Test {
         vault.claim();
     }
 
-    function test_rejectDoubleClaim() public {
+    function test_rejectClaimWhileOutstanding() public {
         _fundVault(1_000_000_000);
         _setTerms(_terms());
         _claim();
 
+        // Cannot take a second loan while the first is still outstanding (existing-debt gate).
         vm.prank(borrower);
-        vm.expectRevert(LoanVault.AlreadyDisbursed.selector);
+        vm.expectRevert(LoanVault.OutstandingDebt.selector);
         vault.claim();
     }
 
