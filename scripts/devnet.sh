@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+#
+# devnet.sh — stand up a PERSISTENT local Vouch devnet for frontend testing.
+#
+# Starts a long-lived anvil node (chain id 5042002, same as Arc), deploys + seeds the protocol
+# (mock USDC, all contracts, a pre-onboarded borrower with approved terms), and writes app/.env
+# with the deployed addresses. Anvil keeps running after this script exits so you can drive the
+# UI against it; stop it with scripts/devnet-stop.sh.
+#
+# Usage:   scripts/devnet.sh
+# Then:    cd app && npm install && npm run dev
+# Stop:    scripts/devnet-stop.sh
+#
+# Requires: foundry (anvil, forge, cast) on PATH.
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CONTRACTS_DIR="$REPO_ROOT/contracts"
+RPC_URL="http://127.0.0.1:8545"
+CHAIN_ID=5042002
+DEPLOYER_PK=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+# anvil account #1 — the pre-onboarded borrower. Import THIS key into MetaMask to test Borrow/Claim.
+BORROWER_PK=0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+PID_FILE="/tmp/vouch-devnet-anvil.pid"
+LOG_FILE="/tmp/vouch-devnet-anvil.log"
+
+for bin in anvil forge cast; do
+  command -v "$bin" >/dev/null 2>&1 || { echo "error: '$bin' not found — install Foundry (https://getfoundry.sh)"; exit 1; }
+done
+
+# If a devnet is already running, reuse it rather than starting a second node on the same port.
+if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" >/dev/null 2>&1; then
+  echo "A devnet is already running (pid $(cat "$PID_FILE")). Stop it first with scripts/devnet-stop.sh."
+  exit 1
+fi
+
+echo "Starting persistent anvil (chain id $CHAIN_ID) — logs at $LOG_FILE ..."
+nohup anvil --chain-id "$CHAIN_ID" >"$LOG_FILE" 2>&1 &
+ANVIL_PID=$!
+echo "$ANVIL_PID" >"$PID_FILE"
+
+# Wait for the RPC to accept requests (up to ~10s).
+for i in $(seq 1 50); do
+  if cast block-number --rpc-url "$RPC_URL" >/dev/null 2>&1; then break; fi
+  if [ "$i" -eq 50 ]; then echo "error: anvil did not become ready (see $LOG_FILE)"; kill "$ANVIL_PID" 2>/dev/null || true; rm -f "$PID_FILE"; exit 1; fi
+  sleep 0.2
+done
+echo "anvil ready (pid $ANVIL_PID)."
+echo ""
+
+cd "$CONTRACTS_DIR"
+forge script script/SetupLocal.s.sol:SetupLocal \
+  --rpc-url "$RPC_URL" \
+  --private-key "$DEPLOYER_PK" \
+  --broadcast \
+  -v
+
+cat <<EOF
+
+────────────────────────────────────────────────────────────────────────
+Devnet is live and will keep running. Next:
+
+  1. In MetaMask, add a network:
+       Name:     Vouch Local (Arc)
+       RPC URL:  $RPC_URL
+       Chain ID: $CHAIN_ID
+       Currency: USDC
+
+  2. Import the pre-onboarded borrower account (has USDC + approved 500 USDC loan):
+       Private key: $BORROWER_PK
+
+  3. Start the frontend:
+       cd app && npm install && npm run dev
+
+What works against this devnet:
+  • Borrow  — connect as the borrower above; terms show approved → click "Claim loan".
+  • Earn    — any imported anvil account has 100,000 USDC; Approve → Deposit to a tranche.
+  • Payout  — after claiming, Approve router → "Cash out" to see the repayment split.
+  (The World ID button stays disabled locally — IDKit needs the real World sequencer; the
+   passport is pre-seeded so you skip straight to Claim.)
+
+Stop the devnet with:  scripts/devnet-stop.sh
+────────────────────────────────────────────────────────────────────────
+EOF

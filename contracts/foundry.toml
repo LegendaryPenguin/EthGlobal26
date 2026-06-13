@@ -7,6 +7,9 @@ solc = "0.8.24"
 optimizer = true
 optimizer_runs = 200
 evm_version = "cancun"
+# Allow the local devnet setup script (script/SetupLocal.s.sol) to write the frontend's app/.env.
+# Scoped to ../app only — never broadens write access beyond the frontend env file.
+fs_permissions = [{ access = "read-write", path = "../app" }]
 
 # Arc Testnet (Circle's L1) — TESTNET ONLY, chain id 5042002 (Golden Rule #3).
 # Never target mainnet. Fund the deployer at https://faucet.circle.com (choose Arc Testnet).
