@@ -2,12 +2,16 @@
 // Arc testnet 2026-06-13. USDC = 6 decimals everywhere. (DESIGN_SPEC / docs/03)
 import type { ChainId } from "../data/mock";
 
+// Env override (set by scripts/devnet.sh for local devnet); defaults to the live Arc testnet
+// deployment. Unifies addresses across borrower app, lender app, and underwriter (Phase 4).
+const ENV = (import.meta as { env?: Record<string, string> }).env ?? {};
+
 // Vouch contracts deployed on Arc Testnet (5042002).
-export const ARC_TRANCHE_POOL = "0x602dB37B2275450717Aa8f1935dC5bbF24a70E0d" as const;
+export const ARC_TRANCHE_POOL = (ENV.VITE_TRANCHE_POOL_ADDRESS as `0x${string}` | undefined) ?? "0x602dB37B2275450717Aa8f1935dC5bbF24a70E0d";
 
 // USDC token address per source chain (testnet).
 export const USDC_ADDRESS: Partial<Record<ChainId, `0x${string}`>> = {
-  arc: "0x3600000000000000000000000000000000000000",
+  arc: (ENV.VITE_USDC_ADDRESS as `0x${string}` | undefined) ?? "0x3600000000000000000000000000000000000000",
   base: "0x036CbD53842c5426634e7929541eC2318f3dCF7e", // Base Sepolia USDC
   ethereum: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238", // Eth Sepolia USDC
 };
