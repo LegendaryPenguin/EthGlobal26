@@ -33,6 +33,13 @@ export const passportRegistryAbi = [
     inputs: [{ name: "wallet", type: "address" }],
     outputs: [{ type: "uint256" }], // USDC, 6 decimals
   },
+  {
+    type: "function",
+    name: "passportIdOf",
+    stateMutability: "view",
+    inputs: [{ name: "wallet", type: "address" }],
+    outputs: [{ type: "bytes32" }], // the human's ERC-8004 passport id; 0x0 if none
+  },
 ] as const;
 
 export const STANDING_LABELS = ["Unverified", "Good", "Late", "Defaulted", "Locked out"] as const;

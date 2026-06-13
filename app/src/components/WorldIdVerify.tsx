@@ -1,9 +1,13 @@
 import { useState } from "react";
 import { IDKitRequestWidget, proofOfHuman, type IDKitResult } from "@worldcoin/idkit";
-import { useAccount } from "wagmi";
+import { useAccount, useReadContract } from "wagmi";
+import type { Address } from "viem";
+import { passportRegistryAbi, STANDING_LABELS } from "../abis/passportRegistry";
 
 const APP_ID = import.meta.env.VITE_WORLD_APP_ID as `app_${string}` | undefined;
 const ACTION = (import.meta.env.VITE_WORLD_ACTION_ID as string) || "mint-credit-passport";
+const PASSPORT = import.meta.env.VITE_PASSPORT_REGISTRY_ADDRESS as Address | undefined;
+const ZERO_ID = "0x0000000000000000000000000000000000000000000000000000000000000000";
 
 type RpContext = {
   rp_id: string;
@@ -27,11 +31,41 @@ export function WorldIdVerify() {
   const [txHash, setTxHash] = useState<string>();
   const [error, setError] = useState<string>();
 
+  // One human = one passport. If this wallet already has a passport on-chain, just show it — no need
+  // to re-verify with World (World also caps verifications per human, so re-verifying would error).
+  const { data: existingId } = useReadContract({
+    address: PASSPORT,
+    abi: passportRegistryAbi,
+    functionName: "passportIdOf",
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(PASSPORT && address) },
+  });
+  const { data: standing } = useReadContract({
+    address: PASSPORT,
+    abi: passportRegistryAbi,
+    functionName: "standingOf",
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(PASSPORT && address) },
+  });
+
   if (!APP_ID) {
     return <p className="muted">Set VITE_WORLD_APP_ID (World developer portal) to enable World ID — see app/.env.local.</p>;
   }
   if (!address) {
     return <p className="muted">Connect a wallet first — it becomes the signal bound to your passport.</p>;
+  }
+
+  // Already verified on this chain → show the existing passport instead of the verify button.
+  if (existingId && existingId !== ZERO_ID) {
+    return (
+      <div className="passport-card">
+        <p className="muted">✓ You're verified — one human, one passport.</p>
+        <p>
+          <strong>Passport ID:</strong> <code>{existingId}</code>
+        </p>
+        <p className="muted">Standing: {STANDING_LABELS[Number(standing ?? 0)] ?? "Unknown"}</p>
+      </div>
+    );
   }
 
   // Step 1: fetch a signed rp_context, then open the widget.
