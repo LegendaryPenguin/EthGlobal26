@@ -30,25 +30,29 @@ uses). `attestationRef` = the Confidential-AI transcript digest, satisfying the 
 - Two settlement paths documented: production CRE `writeReport` (needs CRE CLI/DON) vs this
   viem direct-write demo path (runnable now).
 
-## Wiring the underwriter into the borrower flow (Phase 3 — next)
-Today `app/server/verify.ts` `/api/world/signin` **auto-approves** hardcoded terms (`DEMO_PRINCIPAL`).
-To make it real: in `signin`, instead of the hardcoded `setTerms`, call the underwriter decision
-(`underwriter-layer`) → `decisionToTerms` → `writeTermsToLoanRegistry`. The **ZK gate** (`shiva-work`
-`prove.js`) runs client-side first; its verified result replaces the self-asserted
-`zk_eligibility_proof_valid: true` flag inside the identity blob before the underwriter approves.
-> Deferred deliberately: the borrower flow is being actively rewritten on trunk. Do this edit on the
-> latest trunk to avoid churn — the adapter (Phase 2) is already trunk-agnostic and ready to call.
+## Wiring the underwriter into the borrower flow (Phase 3 — DONE)
+`app/server/verify.ts` `/api/world/signin` no longer hardcodes terms. It now calls
+`app/server/underwrite.ts` → maps the decision → writes `setTerms(Terms)` via the relayer/forwarder.
+`underwrite()` calls the Confidential AI endpoint when `CONFIDENTIAL_AI_API_URL` is set, else a
+deterministic local policy (band→APR, per-human) so the full flow runs without sandbox creds. The
+`attestationRef` is the verdict digest, satisfying the LoanVault gate.
+> **Remaining (one piece):** in-browser Noir proof generation (`shiva-work` `prove.js`) as the literal
+> ZK gate before approval — left out of the Vite bundle for now (wasm bundling would risk the build);
+> `prove.js` runs the real proof+verify standalone today. Wire it as the pre-`signin` gate next.
+
+## On-chain receipts / demo state (Phase 5 — DONE)
+`BorrowFlow.tsx` now shows an **On-chain receipts** panel: passport id, human nullifier,
+attestationRef, and the passport-mint / terms-set / claim tx hashes — each linking to Arcscan on
+testnet (labelled "(local)" on the devnet). Mirrors the lender app's hash/Arcscan pattern.
 
 ## Config unification (Phase 4)
 One address set feeds all three surfaces. Extend `scripts/devnet.sh` / `SetupLocal.s.sol` to also
 write `metamask-lender/.env` and the underwriter `config.*.json` alongside `app/.env`
 (LoanRegistry, LoanVault, TranchePool, PassportRegistry, USDC, RPC).
 
-## Hashes & demo state (Phase 5)
-`metamask-lender/` already surfaces tx hashes + Arcscan links + real/simulated badges. Lift that
-into a shared `Receipts/DemoState` panel for the borrower app: passport-mint tx + nullifier +
-passportId; the `attestationRef` + `setTerms` tx; the claim/disburse tx; repayment tx; and a live
-on-chain readout (standing, terms, vault outstanding, tranche balances) — each with an Arcscan link.
+## New env (borrower server)
+`CONFIDENTIAL_AI_API_URL` / `CONFIDENTIAL_AI_API_KEY` in `app/.env.local` → switches `underwrite()`
+from the local demo policy to the real Confidential AI TEE. Unset = local policy (still real terms).
 
 ## Still mock (flagged, "improve later")
 - **Income ingestion** is self-reported; **TEE encryption** is Base64-mocked (beta Confidential AI
