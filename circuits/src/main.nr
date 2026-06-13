@@ -1,4 +1,4 @@
-// Vouch — Stage 5 eligibility circuit (Noir / ProveKit, Track D)
+// Vouch - Stage 5 eligibility circuit (Noir / ProveKit, Track D)
 //
 // PURPOSE
 //   The privacy gate BEFORE underwriting. The borrower proves, client-side in
@@ -26,7 +26,7 @@
 //   inline rather than importing `std::merkle`. To switch to Poseidon for
 //   ProveKit performance, add the poseidon lib to Nargo.toml and swap `hash2`.
 //   TODO(provekit): confirm whether pedersen or poseidon is the cheaper gadget
-//   for the chosen ProveKit prover (WHIR/Groth16) — https://provekit.org.
+//   for the chosen ProveKit prover (WHIR/Groth16) - https://provekit.org.
 //
 // ------------------------------------------------------------------------------
 // CREDENTIAL MODEL (what we chose, and the simplification)
@@ -74,7 +74,7 @@
 //   This is plain Noir and compiles to ACIR/R1CS with `nargo`. ProveKit then
 //   produces the client-side WHIR/Groth16 proof from the compiled artifact;
 //   nothing ProveKit-specific lives in the circuit. See verify/verify.ts +
-//   README.md. https://provekit.org · https://docs.provekit.atheon.xyz/
+//   README.md. https://provekit.org - https://docs.provekit.atheon.xyz/
 
 use std::hash::pedersen_hash;
 
@@ -124,7 +124,7 @@ fn main(
     low_neighbour: Field,           // sorted-tree leaf just below borrower_id_hash
     high_neighbour: Field,          // sorted-tree leaf just above borrower_id_hash
     merkle_index_bits: [bool; 8],   // path bits of low_neighbour in the tree
-    merkle_siblings: [Field; 8],    // sibling hashes proving low_neighbour ∈ tree
+    merkle_siblings: [Field; 8],    // sibling hashes proving low_neighbour - tree
 
     // ---- PUBLIC inputs (revealed by / bound into the proof) ---------------
     threshold: pub u64,             // affordability bar set by underwriting policy
@@ -181,7 +181,7 @@ fn main(
 }
 
 // ------------------------------------------------------------------------------
-// Tests — run with `nargo test` (requires the Noir toolchain).
+// Tests - run with `nargo test` (requires the Noir toolchain).
 // Each test computes commitment/root the same way the circuit does, so values
 // stay self-consistent regardless of the exact pedersen outputs.
 // ------------------------------------------------------------------------------
@@ -204,6 +204,9 @@ fn test_eligible_borrower_passes() {
     let default_list_root =
         compute_merkle_root(low_neighbour, merkle_index_bits, merkle_siblings);
 
+    std::println(income_commitment);
+    std::println(default_list_root);
+    std::println(nullifier);
     main(
         monthly_income,
         income_blinding,
@@ -249,4 +252,24 @@ fn test_income_below_threshold_fails() {
         income_commitment,
         nullifier,
     );
+}
+
+#[test]
+fn print_hash_values() {
+    let monthly_income: u64 = 5000;
+    let income_blinding: Field = 12345;
+    let income_commitment = hash2(monthly_income as Field, income_blinding);
+
+    let borrower_secret: Field = 777;
+    let borrower_id_hash = hash1(borrower_secret);
+    let nullifier = hash1(borrower_id_hash);
+
+    let low_neighbour: Field = 0;
+    let merkle_index_bits: [bool; 8] = [false; 8];
+    let merkle_siblings: [Field; 8] = [0; 8];
+    let default_list_root = compute_merkle_root(low_neighbour, merkle_index_bits, merkle_siblings);
+ std::println(income_commitment);
+    std::println(default_list_root);
+    std::println(nullifier);
+    assert(false);
 }
