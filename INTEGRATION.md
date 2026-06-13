@@ -70,6 +70,21 @@ from the local demo policy to the real Confidential AI TEE. Unset = local policy
    decision step / CRE sim. Hashes then resolve to real `https://testnet.arcscan.app` links.
 
 ## Verify (green gate)
-- `cd contracts && forge test` — money/identity/rate suite.
-- `cd circuits && nargo test` — eligibility circuit; `node prove.js` — real proof gen+verify.
-- `cd app && npm run build`; `cd metamask-lender && npm run build` — both UIs.
+- `cd contracts && forge test` — **86** tests (money/identity/rate/default/end-to-end).
+- `cd cre && npm test` — **19** tests (CRE sim, incl. income-never-leaks).
+- `cd circuits && nargo test` — **2** tests; `node prove.js` — real proof gen+verify.
+- `cd app && npm test` — **10** tests (Phase-3 `underwrite` decision + Phase-2 `decisionToTerms` seam mapping).
+- `cd app && npm run build`; `cd metamask-lender && npm run build` — both UIs build.
+
+## Demo evidence — real transaction hashes (what judges see)
+The full borrower lifecycle emits **real, mined on-chain txs** — not simulated. Reproduce headless:
+```
+scripts/demo-local.sh        # boots anvil (chain 5042002), broadcasts the whole loop
+```
+`DemoLocal.s.sol` broadcasts 29 signed txs (deploy → tranche deposits → deployToVault → verifyAndMint
+→ setTerms verdict → claim/disburse → 4 income-routed repayments). Verified with `cast receipt` —
+all `status 1 (success)`, e.g. on one run: `verifyAndMint` blk 19, `setTerms` blk 20, `claim` blk 21,
+`onPayout` blk 23. Outcome: $500 disbursed → repaid to $0 over 4 payouts → credit limit laddered
+$500 → $750. On **live Arc testnet** the identical flow yields Arcscan-linkable hashes; the borrower
+app's **On-chain receipts** panel renders each (mint / terms-set / claim) as a
+`https://testnet.arcscan.app/tx/…` link, and the lender app does the same for deposits/CCTP.
