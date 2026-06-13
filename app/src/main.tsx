@@ -6,6 +6,9 @@ import { config } from "./wagmi";
 import { App } from "./App";
 import "./styles.css";
 
+// Enable scroll-reveal (CSS hides `.rv` only when `html.js` is set) before first paint — no flash.
+document.documentElement.classList.add("js");
+
 const queryClient = new QueryClient();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
