@@ -2,7 +2,8 @@
 
 > **Shared, stored context for any Claude session in this repo.** Run `/handoff` to load it.
 > Keep this file updated as the build moves. Last verified: contracts **86/86**, Noir **2/2**,
-> CRE **19/19**, frontend builds clean.
+> CRE **19/19**, frontend builds clean, and the **real World ID v4 scan → on-chain passport mint
+> verified end-to-end** (live phone scan → cloud verify → relayer mint on the local devnet).
 
 ---
 
@@ -136,8 +137,21 @@ Full detail lives in `docs/01` (problem/personas) and `docs/07` (track coverage 
 | 8 | Default handling — permissionless `markLate`/`markDefault` (grace) → lockout + `absorbLoss`; full-repay heals + ladders limit | ✅ |
 | Bonus | Connect the World — `RateModel` reads a Chainlink feed, persists effective APR on-chain | ✅ |
 
-**Frontend** (`/app`): MetaMask + Arc, reads the seam, World ID v4 (cloud verify + relayer mint),
-Borrow/Claim, lender Earn (approve+deposit), mock Payout. Builds clean.
+**Frontend** (`/app`): MetaMask + Arc, reads the seam, **real World ID v4 cloud verify → relayer
+mints the passport** (verified end-to-end: live phone scan → on-chain mint). **Borrower-only UI** —
+the Earn (lender) + Payout tabs were removed (`App.tsx` renders only `BorrowTab`); the
+TranchePool/IncomeRouter contracts still exist for the demo scripts. Builds clean.
+
+**World ID v4 (frontend, `app/server/verify.ts` Vite dev middleware):** the portal app is **World ID
+4.0** — app `app_6fb1…`, managed RP `rp_c688…`, RP signer = the deployer `0x9B7c…`. Uses idkit **4.x**
+(NOT 2.x — protocol-incompatible). Flow: `POST /api/world/context` signs an `rp_context` nonce with
+the RP key (`@worldcoin/idkit-server` `signRequest`) → `IDKitRequestWidget` + `proofOfHuman` produce a
+v4 proof → `POST /api/verify` forwards it to `developer.worldcoin.org/api/v4/verify/{rp_id}` → on
+success a relayer calls `PassportRegistry.verifyAndMint` (MockWorldID rubber-stamps on-chain; the real
+ZK check IS the cloud verify). **Dev gotchas:** (1) idkit's bridge WASM must be served as
+`application/wasm` — a middleware in `vite.config.ts` serves `idkit_wasm_bg.wasm` (else no QR,
+"Something went wrong"); (2) do NOT `optimizeDeps.exclude` idkit — breaks its `qrcode` CJS interop
+(white screen); (3) `allow_legacy_proofs: true` so device-verified phones work, not just Orb.
 
 **Local devnet** (`scripts/devnet.sh`): one command deploys + seeds everything on anvil and writes
 `app/.env` — the fastest way to click through the whole UI without testnet funds. See §8.
@@ -242,10 +256,27 @@ MCP. Templates: root `.env.example`, `app/.env.example`. Key vars:
 - **Don't modify the frozen seam** (`LoanRegistry`/`ILoanRegistry`) without a coordinated re-freeze.
 - Parallel work: independent directories only; verify + integrate before committing.
 
-## 12. Blocked on credentials / external setup
+## 12. Live Arc Testnet deployment (DONE)
 
-- **Live Arc deploy** — needs a funded key (`https://faucet.circle.com`) + live USDC/contract
-  addresses (Circle MCP). Then `forge script script/Deploy.s.sol --rpc-url arc_testnet --broadcast`.
+Deployed via `script/DeployArc.s.sol` (MockWorldID + full stack on real Arc USDC `0x3600…`), deployer
+`0x9B7c50B1110e911DedbdaF505a63f910fA39ee3d` (also the World RP signer + relayer):
+
+| Contract | Arc address (chain 5042002) |
+|---|---|
+| PassportRegistry | `0x54b123ceC0C4F2caeaF99280EAc2D3E66ae6f50F` |
+| LoanRegistry | `0xD5A4bc81bA7b93b4f8a0e6c210a275d1a68FAA38` |
+| LoanVault | `0x8b00F14B49962F0c8761B63E598AD878444598b4` |
+| IncomeRouter | `0xB2A410EeC3C9C52A0c7Df96Fc93EEDe6cCd8A37a` |
+| TranchePool | `0x602dB37B2275450717Aa8f1935dC5bbF24a70E0d` |
+| MockWorldID | `0x0E99bEBD374E3c8793F988d55Ff7070E4b232869` |
+
+Explorer: `https://testnet.arcscan.app`. To point the app at Arc, `app/.env.local` overrides the
+localhost addresses with these + `VITE_ARC_RPC_URL=https://rpc.testnet.arc.network` and the relayer
+key (kept out of git). Run `scripts/devnet.sh` only for the *local* anvil flow.
+
+## 12b. Still blocked on credentials / external setup
+
+- **CRE live run** — CRE CLI + Confidential AI sandbox; then `LoanRegistry.setForwarder(<forwarder>)`.
 - **CRE live run** — CRE CLI + Confidential AI sandbox; then `LoanRegistry.setForwarder(<forwarder>)`.
 - **World ID live** — World portal app + RP signing key + relayer (see `app/server/verify.ts`).
 - **ProveKit** — generate the browser WHIR/Groth16 proof from the compiled circuit; wire the verifier.
