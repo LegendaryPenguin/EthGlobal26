@@ -1,70 +1,66 @@
+import { useState } from "react";
 import { IDKitWidget, type ISuccessResult, VerificationLevel } from "@worldcoin/idkit";
-import { useAccount, useWriteContract } from "wagmi";
-import { decodeAbiParameters, type Address } from "viem";
-import { passportRegistryAbi } from "../abis/passportRegistry";
+import { useAccount } from "wagmi";
 
-const PASSPORT = import.meta.env.VITE_PASSPORT_REGISTRY_ADDRESS as Address | undefined;
 const APP_ID = import.meta.env.VITE_WORLD_APP_ID as `app_${string}` | undefined;
 const ACTION = (import.meta.env.VITE_WORLD_ACTION_ID as string) || "mint-credit-passport";
 
-/// World ID verification → on-chain PassportRegistry.verifyAndMint. The proof is validated
-/// ON-CHAIN (the track forbids client-only validation). signal = the connected wallet, so the
-/// nullifier binds this human to one passport (docs/05). A locked-out human reverts here.
+/// World ID verification (Path A — cloud verify). The proof is POSTed to our own /api/verify endpoint
+/// (server/verify.ts), which validates it against World's cloud API and then mints the passport via a
+/// relayer. On Arc there is no in-contract World ID verifier (docs/05), so validation happens in the
+/// backend — which the track permits ("backend OR on-chain"). signal = the connected wallet, so the
+/// nullifier binds this human to one passport; a locked-out human is rejected by PassportRegistry.
 export function WorldIdVerify() {
   const { address } = useAccount();
-  const { writeContract, isPending, data: txHash, error } = useWriteContract();
+  const [status, setStatus] = useState<"idle" | "verifying" | "done" | "error">("idle");
+  const [txHash, setTxHash] = useState<string>();
+  const [error, setError] = useState<string>();
 
   if (!APP_ID) {
     return (
       <p className="muted">
-        Set VITE_WORLD_APP_ID (World developer portal) + deploy PassportRegistry to enable World ID.
+        Set VITE_WORLD_APP_ID (World developer portal) to enable World ID — see app/.env.local.
       </p>
     );
   }
-  if (!PASSPORT || !address) {
-    return <p className="muted">Connect a wallet and set VITE_PASSPORT_REGISTRY_ADDRESS.</p>;
+  if (!address) {
+    return <p className="muted">Connect a wallet first — it becomes the signal bound to your passport.</p>;
   }
 
-  const onSuccess = (result: ISuccessResult) => {
-    // IDKit returns hex strings; unpack the proof into the uint256[8] the verifier expects.
-    const root = BigInt(result.merkle_root);
-    const nullifierHash = BigInt(result.nullifier_hash);
-    const proof = decodeAbiParameters([{ type: "uint256[8]" }], result.proof as `0x${string}`)[0] as readonly [
-      bigint,
-      bigint,
-      bigint,
-      bigint,
-      bigint,
-      bigint,
-      bigint,
-      bigint,
-    ];
-
-    writeContract({
-      address: PASSPORT,
-      abi: passportRegistryAbi,
-      functionName: "verifyAndMint",
-      args: [address, root, nullifierHash, proof],
-    });
+  const onSuccess = async (result: ISuccessResult) => {
+    setStatus("verifying");
+    setError(undefined);
+    try {
+      const res = await fetch("/api/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proof: result, signal: address }),
+      });
+      const data = (await res.json()) as { ok: boolean; txHash?: string; error?: string; detail?: string };
+      if (data.ok) {
+        setTxHash(data.txHash);
+        setStatus("done");
+      } else {
+        setError(data.detail ? `${data.error} (${data.detail})` : data.error ?? "verification failed");
+        setStatus("error");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setStatus("error");
+    }
   };
 
   return (
     <div>
-      <IDKitWidget
-        app_id={APP_ID}
-        action={ACTION}
-        signal={address}
-        verification_level={VerificationLevel.Orb}
-        onSuccess={onSuccess}
-      >
+      <IDKitWidget app_id={APP_ID} action={ACTION} signal={address} verification_level={VerificationLevel.Orb} onSuccess={onSuccess}>
         {({ open }) => (
-          <button className="btn btn--primary" onClick={open} disabled={isPending}>
-            {isPending ? "Minting passport…" : "Verify with World ID"}
+          <button className="btn btn--primary" onClick={open} disabled={status === "verifying"}>
+            {status === "verifying" ? "Verifying + minting…" : status === "done" ? "Passport minted ✓" : "Verify with World ID"}
           </button>
         )}
       </IDKitWidget>
-      {txHash && <p className="muted">passport tx: {txHash}</p>}
-      {error && <p className="error">{error.message}</p>}
+      {status === "done" && txHash && <p className="muted">passport tx: {txHash}</p>}
+      {status === "error" && error && <p className="error">{error}</p>}
     </div>
   );
 }
