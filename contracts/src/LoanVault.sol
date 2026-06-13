@@ -9,6 +9,21 @@ interface IPassportGate {
     function isInGoodStanding(address wallet) external view returns (bool);
 }
 
+/// @dev Stage 8 reputation hooks the vault drives from repayment outcomes. These are the specific
+///      wallet-keyed transitions on the PassportRegistry; each is a no-op there if the wallet has no
+///      passport, so the vault may call them unconditionally whenever `passportRegistry` is wired.
+interface IPassportReputation {
+    function recordLateness(address wallet) external;
+    function recordDefault(address wallet) external;
+    function recordFullRepayment(address wallet) external;
+}
+
+/// @dev Stage 8 loss hook on the TranchePool. The vault reports a default's unrecovered principal so
+///      the junior tranche absorbs it first (waterfall). Optional (gated on `tranchePool` != 0).
+interface ITranchePoolLoss {
+    function absorbLoss(uint256 amount) external returns (uint256 fromJunior, uint256 fromSenior);
+}
+
 /// @title LoanVault (Arc) — the money layer.
 /// @notice Holds pooled USDC; on a borrower's claim, checks `getTerms` + a valid attestation,
 ///         then disburses. Tracks per-loan balance + a fixed-term, equal-installment amortization
@@ -37,10 +52,20 @@ contract LoanVault {
     ///      early money-layer tests); production deploys MUST set it.
     address public passportRegistry;
 
+    /// @dev Optional Stage 8 tranche pool (loss layer). When set, a {markDefault} reports the loan's
+    ///      unrecovered principal to the pool's loss waterfall (junior-first). address(0) = skip loss
+    ///      reporting, so a vault deployed without the lender side still works (existing tests do this).
+    address public tranchePool;
+
     uint256 public constant TERM_DAYS = 30;
     uint256 public constant INSTALLMENTS = 4;
     uint256 public constant BPS_DENOMINATOR = 10_000;
     uint256 public constant DAYS_PER_YEAR = 365;
+
+    /// @dev Slack after a missed installment (markLate) and after the term ends (markDefault) before
+    ///      the respective state can be forced. A borrower is never marked late/defaulted the instant
+    ///      a deadline passes; they get this grace window first.
+    uint256 public constant GRACE_PERIOD = 3 days;
 
     struct Loan {
         uint256 principal;          // disbursed amount, 6 decimals
@@ -51,6 +76,7 @@ contract LoanVault {
         uint64  startedAt;
         bool    disbursed;
         bool    repaid;
+        bool    defaulted;         // Stage 8: term + grace elapsed while still owing → written off
     }
 
     mapping(address borrower => Loan) public loans;
@@ -59,6 +85,8 @@ contract LoanVault {
     event Disbursed(address indexed borrower, uint256 principal, uint256 totalRepayable, bytes32 attestationRef);
     event Repaid(address indexed borrower, uint256 amount, uint256 outstanding);
     event LoanFullyRepaid(address indexed borrower, uint256 totalRepaid);
+    event MarkedLate(address indexed borrower, uint256 repaidSoFar, uint256 expectedRepaid);
+    event Defaulted(address indexed borrower, uint256 outstanding, uint256 capitalLoss);
 
     error NotApproved();
     error TermsExpired();
@@ -74,6 +102,12 @@ contract LoanVault {
     error ZeroAmount();
     error ZeroRouter();
     error NotInGoodStanding();
+    error NotBehindSchedule();
+    error AlreadyLate();
+    error AlreadyDefaulted();
+    error TermNotElapsed();
+    error TermEnded();
+    error GraceNotElapsed();
 
     event RouterUpdated(address indexed previousRouter, address indexed newRouter);
 
@@ -143,7 +177,8 @@ contract LoanVault {
             aprBps: t.aprBps,
             startedAt: uint64(block.timestamp),
             disbursed: true,
-            repaid: false
+            repaid: false,
+            defaulted: false
         });
 
         emit Disbursed(msg.sender, t.principal, totalRepayable, t.attestationRef);
@@ -175,6 +210,11 @@ contract LoanVault {
         if (loan.outstanding == 0) {
             loan.repaid = true;
             emit LoanFullyRepaid(borrower, loan.totalRepayable);
+            // Reputation heals + ladders up on full repayment. Optional (skipped if unset); the
+            // registry no-ops if this borrower never minted a passport.
+            if (passportRegistry != address(0)) {
+                IPassportReputation(passportRegistry).recordFullRepayment(borrower);
+            }
         }
     }
 
@@ -200,6 +240,104 @@ contract LoanVault {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Stage 8 — overdue / default tracking (permissionless, grace-gated)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// @notice The amount the schedule says SHOULD have been repaid by now: one `installmentAmount`
+    ///         per elapsed `installmentInterval` (TERM_DAYS / INSTALLMENTS = 7.5 days), capped at
+    ///         `totalRepayable`. Returns 0 if there is no active (disbursed, unrepaid, undefaulted) loan.
+    /// @dev    e.g. at +8 days, one full installment is due; at +16 days, two; at term end, all four.
+    function expectedRepaid(address borrower) public view returns (uint256) {
+        Loan storage loan = loans[borrower];
+        if (!loan.disbursed || loan.repaid || loan.defaulted) return 0;
+        uint256 elapsed = block.timestamp - loan.startedAt;
+        uint256 installmentInterval = (TERM_DAYS * 1 days) / INSTALLMENTS;
+        uint256 due = (elapsed / installmentInterval) * loan.installmentAmount;
+        return due > loan.totalRepayable ? loan.totalRepayable : due;
+    }
+
+    /// @notice How much of `totalRepayable` has actually been repaid so far.
+    function repaidSoFar(address borrower) public view returns (uint256) {
+        Loan storage loan = loans[borrower];
+        return loan.totalRepayable - loan.outstanding;
+    }
+
+    /// @notice PERMISSIONLESS: flag a behind-schedule borrower as Late on their passport. Anyone may
+    ///         call this — lateness is an objective, on-chain fact (the schedule says X is due, only
+    ///         Y < X has been paid, and the grace window after the missed installment has elapsed).
+    /// @dev    Requirements: an active loan (disbursed, !repaid, !defaulted), still inside the term,
+    ///         actually behind schedule, and at least GRACE_PERIOD past the most-recent due installment.
+    ///         Only transitions a borrower currently in Good standing (the registry no-ops otherwise,
+    ///         e.g. already Late / no passport). Skips entirely if `passportRegistry` is unset.
+    function markLate(address borrower) external {
+        Loan storage loan = loans[borrower];
+        if (!loan.disbursed) revert NoActiveLoan();
+        if (loan.repaid) revert AlreadyRepaid();
+        if (loan.defaulted) revert AlreadyDefaulted();
+
+        uint256 termEnd = loan.startedAt + TERM_DAYS * 1 days;
+        // After the term ends, default (not late) is the right state. Lateness is an in-term signal.
+        if (block.timestamp >= termEnd) revert TermEnded();
+
+        uint256 owedNow = expectedRepaid(borrower);
+        uint256 paid = repaidSoFar(borrower);
+        if (paid >= owedNow) revert NotBehindSchedule();
+
+        // Grace: require GRACE_PERIOD to have elapsed since the most recent installment came due, so a
+        // borrower is never marked late the instant an installment deadline passes.
+        uint256 installmentInterval = (TERM_DAYS * 1 days) / INSTALLMENTS;
+        uint256 installmentsDue = owedNow / loan.installmentAmount; // # of installments currently due
+        uint256 lastDueAt = loan.startedAt + installmentsDue * installmentInterval;
+        if (block.timestamp < lastDueAt + GRACE_PERIOD) revert GraceNotElapsed();
+
+        emit MarkedLate(borrower, paid, owedNow);
+
+        // Drive the reputation transition. Only Good → Late actually moves (registry no-ops on Late /
+        // no-passport), so a repeat call is a clean no-op rather than a revert.
+        if (passportRegistry != address(0)) {
+            IPassportReputation(passportRegistry).recordLateness(borrower);
+        }
+    }
+
+    /// @notice PERMISSIONLESS: write off a loan that ran past its full term + grace while still owing.
+    ///         Anyone may call this. Sets `defaulted`, reports the unrecovered principal to the tranche
+    ///         pool's loss waterfall (if wired), and locks the human out network-wide (if wired).
+    /// @dev    LOSS FORMULA (documented): the pool's loss is unrecovered *principal* only —
+    ///             capitalLoss = principal > repaidSoFar ? principal - repaidSoFar : 0.
+    ///         Interest is recognized only as it is actually paid (it flows through the IncomeRouter and
+    ///         is distributed as yield), so unearned interest is NOT a balance-sheet loss to the pool;
+    ///         only lent capital that never came back is. Repayments are applied to `outstanding`
+    ///         (principal + interest) as one pot, so `repaidSoFar` first offsets what would otherwise be
+    ///         principal loss — i.e. partial repayments shrink the capital loss.
+    function markDefault(address borrower) external {
+        Loan storage loan = loans[borrower];
+        if (!loan.disbursed) revert NoActiveLoan();
+        if (loan.repaid) revert AlreadyRepaid();
+        if (loan.defaulted) revert AlreadyDefaulted();
+
+        uint256 defaultAt = loan.startedAt + TERM_DAYS * 1 days + GRACE_PERIOD;
+        if (block.timestamp < defaultAt) revert TermNotElapsed();
+
+        loan.defaulted = true;
+
+        uint256 paid = repaidSoFar(borrower);
+        uint256 capitalLoss = loan.principal > paid ? loan.principal - paid : 0;
+
+        emit Defaulted(borrower, loan.outstanding, capitalLoss);
+
+        // Report the capital loss to the tranche waterfall (junior-first). Optional.
+        if (tranchePool != address(0) && capitalLoss > 0) {
+            ITranchePoolLoss(tranchePool).absorbLoss(capitalLoss);
+        }
+
+        // Lock the human out network-wide — the anti-respawn flag. Optional; registry no-ops if the
+        // borrower never minted a passport.
+        if (passportRegistry != address(0)) {
+            IPassportReputation(passportRegistry).recordDefault(borrower);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Admin
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -219,6 +357,13 @@ contract LoanVault {
     /// @notice Set/rotate the World ID passport gate (Stage 4). Owner-only. address(0) disables it.
     function setPassportRegistry(address _passportRegistry) external onlyOwner {
         passportRegistry = _passportRegistry;
+    }
+
+    /// @notice Set/rotate the Stage 8 tranche pool that absorbs default losses. Owner-only.
+    ///         address(0) disables loss reporting (the vault still functions; defaults just don't write
+    ///         down a pool). The pool must also authorize this vault via its `setLossReporter`.
+    function setTranchePool(address _tranchePool) external onlyOwner {
+        tranchePool = _tranchePool;
     }
 
     // ─────────────────────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import {LoanRegistry} from "../src/LoanRegistry.sol";
 import {LoanVault} from "../src/LoanVault.sol";
 import {IncomeRouter} from "../src/IncomeRouter.sol";
 import {PassportRegistry} from "../src/PassportRegistry.sol";
+import {TranchePool} from "../src/TranchePool.sol";
 import {IWorldID} from "../src/interfaces/IWorldID.sol";
 
 /// @notice Stage 1–4 deploy on Arc Testnet (chain id 5042002, Golden Rule #3).
@@ -35,8 +36,19 @@ contract Deploy is Script {
         // Deploy the vault with router unset, then wire the router (circular reference) + the gate.
         LoanVault vault = new LoanVault(address(registry), usdc, address(0));
         IncomeRouter router = new IncomeRouter(address(vault), usdc);
+
+        // Stage 6/8 lender side: senior/junior tranche pool, senior targeting 6% APY (600 bps).
+        TranchePool pool = new TranchePool(usdc, 600);
+
         vault.setRouter(address(router));
         vault.setPassportRegistry(address(passport)); // Stage 4 anti-respawn gate ON
+
+        // Stage 8 wiring: the vault is the reputation oracle (drives standing from repayment outcomes)
+        // and the pool's loss reporter (reports default capital losses); the vault reports those losses
+        // to the pool. All three are optional gates, set here for a production deploy.
+        passport.setReputationOracle(address(vault));
+        pool.setLossReporter(address(vault));
+        vault.setTranchePool(address(pool));
 
         vm.stopBroadcast();
 
@@ -44,6 +56,7 @@ contract Deploy is Script {
         console2.log("PassportRegistry:", address(passport));
         console2.log("LoanVault:       ", address(vault));
         console2.log("IncomeRouter:    ", address(router));
+        console2.log("TranchePool:     ", address(pool));
         console2.log("Forwarder:       ", forwarder);
         console2.log("USDC:            ", usdc);
         console2.log("WorldID verifier:", worldIdVerifier);
