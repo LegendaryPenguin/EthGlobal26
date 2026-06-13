@@ -161,4 +161,79 @@ contract PassportRegistry {
         p.limit = limit;
         emit StandingUpdated(nullifierHash, standing, score, limit);
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Stage 8 — wallet-keyed reputation state machine (driven by LoanVault)
+    // ─────────────────────────────────────────────────────────────────────────
+    //
+    // These wrap {setStanding}'s generic poke in the specific repayment-outcome transitions from
+    // docs/02 ("Default handling (state, not narrative)"). They are keyed by WALLET (the loan layer
+    // only knows borrower wallets) and resolve the one-human passport via {walletToHuman}. Each is a
+    // safe no-op if the wallet has no passport, so the LoanVault can call them unconditionally
+    // without having to know whether a borrower ever minted a passport.
+
+    /// @dev Score penalty applied on a lateness transition (Good → Late). Small + temporary; heals on
+    ///      full repayment. Saturating-subtracted so score never underflows.
+    uint32 public constant LATE_SCORE_PENALTY = 10;
+    /// @dev Score bump granted on a full, on-time repayment.
+    uint32 public constant REPAYMENT_SCORE_BUMP = 20;
+
+    /// @notice Good → Late with a small temporary score ding. No-op if the wallet has no passport, is
+    ///         already Late, or has walked away (Defaulted/LockedOut — a worse state, don't soften it).
+    ///         Limit is left untouched: a late borrower may still borrow (see {isInGoodStanding}).
+    function recordLateness(address wallet) external onlyReputationAuthority {
+        uint256 nullifierHash = walletToHuman[wallet];
+        Passport storage p = passports[nullifierHash];
+        if (p.id == bytes32(0)) return; // no passport → nothing to ding
+        if (p.standing != Standing.Good) return; // only the Good → Late edge transitions
+        p.standing = Standing.Late;
+        p.score = p.score > LATE_SCORE_PENALTY ? p.score - LATE_SCORE_PENALTY : 0;
+        emit StandingUpdated(nullifierHash, p.standing, p.score, p.limit);
+    }
+
+    /// @notice Walked away from a loan → LockedOut, score 0, limit 0. This is the network-wide lockout
+    ///         that makes a respawning wallet's {verifyAndMint} revert {HumanLockedOut}. No-op if the
+    ///         wallet has no passport. Idempotent if already LockedOut.
+    function recordDefault(address wallet) external onlyReputationAuthority {
+        uint256 nullifierHash = walletToHuman[wallet];
+        Passport storage p = passports[nullifierHash];
+        if (p.id == bytes32(0)) return; // no passport → nothing to lock
+        p.standing = Standing.LockedOut;
+        p.score = 0;
+        p.limit = 0;
+        emit StandingUpdated(nullifierHash, p.standing, p.score, p.limit);
+    }
+
+    /// @notice Full repayment heals reputation: Late → Good, bumps the score, and ladders the limit UP.
+    ///         No-op if the wallet has no passport. LADDER RULE (documented + chosen): the new limit is
+    ///         `currentLimit + INITIAL_LIMIT / 2` (a flat +$250 step), so good borrowers climb steadily
+    ///         from $500 → $750 → $1000 … We picked the flat additive step over a +50% multiplicative
+    ///         one because it is bounded, easy to reason about in the demo, and avoids runaway growth on
+    ///         already-large limits. A walked-away human (Defaulted/LockedOut) is NOT healed here — that
+    ///         requires {cure}.
+    function recordFullRepayment(address wallet) external onlyReputationAuthority {
+        uint256 nullifierHash = walletToHuman[wallet];
+        Passport storage p = passports[nullifierHash];
+        if (p.id == bytes32(0)) return; // no passport → nothing to heal
+        if (p.standing == Standing.LockedOut || p.standing == Standing.Defaulted) return; // needs cure, not heal
+        p.standing = Standing.Good; // heals Late → Good (and keeps Good as Good)
+        p.score = p.score + REPAYMENT_SCORE_BUMP;
+        p.limit = p.limit + (INITIAL_LIMIT / 2); // ladder up by a flat +$250 step
+        emit StandingUpdated(nullifierHash, p.standing, p.score, p.limit);
+    }
+
+    /// @notice Authority-only "default-then-cure" path (docs/02): a LockedOut/Defaulted human who comes
+    ///         back, repays + takes a penalty, is allowed to RE-ENTER the system at a low limit. Moves
+    ///         them to Late (not Good — they re-enter on probation) at the supplied low `newLimit`, with
+    ///         score reset to 0. Reverts {NoPassport} if the wallet has none. Intended for an operator /
+    ///         off-chain reputation service after partial recovery, not an automatic on-chain edge.
+    function cure(address wallet, uint256 newLimit) external onlyReputationAuthority {
+        uint256 nullifierHash = walletToHuman[wallet];
+        Passport storage p = passports[nullifierHash];
+        if (p.id == bytes32(0)) revert NoPassport();
+        p.standing = Standing.Late; // re-enter on probation, can borrow but flagged
+        p.score = 0;
+        p.limit = newLimit;
+        emit StandingUpdated(nullifierHash, p.standing, p.score, newLimit);
+    }
 }

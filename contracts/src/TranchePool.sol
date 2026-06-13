@@ -64,6 +64,10 @@ contract TranchePool {
     /// @notice Senior fixed-rate target in bps (e.g. 600 = 6.00% APY). Owner-configurable.
     uint16 public seniorRateBps;
 
+    /// @notice Optional Stage 8 loss reporter (the LoanVault) authorized to call {absorbLoss} when a
+    ///         loan defaults. address(0) = only the owner may report losses. Owner-settable.
+    address public lossReporter;
+
     // ── per-tranche vault state ────────────────────────────────────────────────
     struct TrancheState {
         uint256 totalShares;
@@ -82,6 +86,7 @@ contract TranchePool {
     event DeployedToVault(address indexed vault, uint256 amount);
     event SeniorRateUpdated(uint16 previousBps, uint16 newBps);
     event OwnerUpdated(address indexed previousOwner, address indexed newOwner);
+    event LossReporterUpdated(address indexed previousReporter, address indexed newReporter);
 
     // ── errors ───────────────────────────────────────────────────────────────
     error NotOwner();
@@ -201,7 +206,11 @@ contract TranchePool {
     ///         was already lost when the loan defaulted. Capped at total pool assets.
     /// @return fromJunior loss taken by junior.
     /// @return fromSenior loss taken by senior (only after junior is wiped).
-    function absorbLoss(uint256 amount) external onlyOwner returns (uint256 fromJunior, uint256 fromSenior) {
+    function absorbLoss(uint256 amount) external returns (uint256 fromJunior, uint256 fromSenior) {
+        // Owner OR the wired loss reporter (the LoanVault's default hook) may report a loss. We reuse
+        // the {NotOwner} selector for an unauthorized caller to keep the original access-control test
+        // and its error surface unchanged.
+        if (msg.sender != owner && msg.sender != lossReporter) revert NotOwner();
         if (amount == 0) revert ZeroAmount();
         TrancheState storage senior = _tranches[Tranche.Senior];
         TrancheState storage junior = _tranches[Tranche.Junior];
@@ -254,6 +263,13 @@ contract TranchePool {
         if (_owner == address(0)) revert ZeroAddress();
         emit OwnerUpdated(owner, _owner);
         owner = _owner;
+    }
+
+    /// @notice Set/rotate the Stage 8 loss reporter (the LoanVault) allowed to call {absorbLoss}.
+    ///         Owner-only. address(0) disables it, leaving losses owner-only.
+    function setLossReporter(address _lossReporter) external onlyOwner {
+        emit LossReporterUpdated(lossReporter, _lossReporter);
+        lossReporter = _lossReporter;
     }
 
     // ─────────────────────────────────────────────────────────────────────────

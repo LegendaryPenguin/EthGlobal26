@@ -99,7 +99,7 @@ contract LoanVaultTest is Test {
             ,
             ,
             bool disbursed,
-            bool repaid
+            bool repaid,
         ) = vault.loans(borrower);
 
         assertEq(principal, PRINCIPAL);
