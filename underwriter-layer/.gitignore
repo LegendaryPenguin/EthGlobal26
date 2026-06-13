@@ -1,0 +1,12 @@
+.env
+.agents
+node_modules/
+dist/
+*.wasm
+out/
+cache/
+lib/
+
+# Chainlink CRE build artifacts
+.cre_build_tmp.js
+.cre_build_tmp.js.map

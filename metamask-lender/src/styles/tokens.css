@@ -1,0 +1,141 @@
+/* MetaMask Design System v2 tokens — verbatim from DESIGN_SPEC.md §2.
+   Light theme is primary. */
+:root {
+  /* ============ BRAND ============ */
+  --brand-orange-050: #fff0ea;
+  --brand-orange-100: #ffd4c1;
+  --brand-orange-300: #ff7940;
+  --brand-orange-400: #ff5c16; /* MetaMask logo / primary brand orange */
+  --brand-orange-500: #c3420d;
+  --brand-white: #ffffff;
+  --brand-black: #000000;
+
+  /* Interactive blue (DS v2 primary for buttons/links) */
+  --blue-300: #8b99ff;
+  --blue-500: #4459ff;
+  --blue-600: #2c3dc5;
+  --legacy-brand-blue: #0376c9;
+
+  /* ============ LIGHT THEME (PRIMARY) ============ */
+  --color-background-default: #ffffff;
+  --color-background-section: #f3f3f4;
+  --color-background-default-pressed: #ededed;
+  --color-background-default-hover: #f3f3f4;
+  --color-background-muted: #b4b4b528;
+  --color-overlay-default: #00000099;
+
+  --color-text-default: #131416;
+  --color-text-alternative: #66676a;
+  --color-text-muted: #babbbe;
+  --color-text-inverse: #ffffff;
+
+  --color-border-default: #949596;
+  --color-border-muted: #b4b4b566;
+
+  --color-primary-default: #4459ff;
+  --color-primary-hover: #384df5;
+  --color-primary-pressed: #2b3eda;
+  --color-primary-inverse: #ffffff;
+  --color-primary-muted: #4459ff1a;
+
+  --color-success-default: #457a39;
+  --color-success-muted: #457a391a;
+  --color-error-default: #ca3542;
+  --color-error-muted: #ca35421a;
+  --color-warning-default: #9a6300;
+  --color-warning-muted: #9a63001a;
+  --color-info-default: #4459ff;
+
+  /* ============ SHADOWS ============ */
+  --color-shadow-default: #0000001a;
+  --shadow-xs: 0 2px 4px 0 var(--color-shadow-default);
+  --shadow-sm: 0 2px 8px 0 var(--color-shadow-default);
+  --shadow-md: 0 2px 16px 0 var(--color-shadow-default);
+  --shadow-lg: 0 2px 40px 0 var(--color-shadow-default);
+  --shadow-primary: 0 2px 16px 0 #0376c933;
+
+  /* ============ TYPOGRAPHY ============ */
+  --font-family-sans: "Euclid Circular B", "Roboto", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-size-base: 16px;
+
+  /* ============ RADII ============ */
+  --radius-none: 0px;
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* ============ SPACING (base unit 4px) ============ */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ============ MOTION ============ */
+  --ease: cubic-bezier(0.2, 0, 0, 1);          /* MetaMask-style decel ease-out */
+  --ease-out: cubic-bezier(0.32, 0.72, 0, 1);  /* expressive enter */
+  --dur-fast: 140ms;
+  --dur: 200ms;
+  --dur-slow: 280ms;
+}
+
+/* ============ TYPOGRAPHY SCALE (bolder pass — DESIGN_SPEC §2) ============ */
+.t-display-md { font-size: 48px; font-weight: 900; line-height: 56px; letter-spacing: -0.02em; }
+.t-heading-lg { font-size: 32px; font-weight: 900; line-height: 40px; letter-spacing: -0.025em; }
+.t-heading-md { font-size: 24px; font-weight: 700; line-height: 32px; letter-spacing: -0.018em; }
+.t-heading-sm { font-size: 18px; font-weight: 700; line-height: 24px; letter-spacing: -0.01em; }
+.t-body-lg-medium { font-size: 18px; font-weight: 500; line-height: 24px; }
+.t-body-md { font-size: 16px; font-weight: 500; line-height: 24px; }
+.t-body-md-bold { font-size: 16px; font-weight: 700; line-height: 24px; }
+.t-body-sm { font-size: 14px; font-weight: 500; line-height: 22px; }
+.t-body-sm-medium { font-size: 14px; font-weight: 700; line-height: 22px; }
+.t-body-xs { font-size: 12px; font-weight: 500; line-height: 20px; }
+.t-body-2xs { font-size: 10px; font-weight: 500; line-height: 16px; }
+
+.text-alt { color: var(--color-text-alternative); }
+.text-muted { color: var(--color-text-muted); }
+.text-success { color: var(--color-success-default); }
+.text-error { color: var(--color-error-default); }
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* ============ DARK THEME (the live default for this demo — MetaMask "black screen") ============ */
+:root[data-theme="dark"] {
+  --color-background-default: #08090b;        /* near-black main surface (darker) */
+  --color-background-section: #131416;        /* sidebar / nested panels */
+  --color-background-alternative: #050608;    /* deepest */
+  --color-background-default-pressed: #26282c;
+  --color-background-default-hover: #1a1c1f;
+  --color-background-muted: #ffffff14;        /* 8% white fill */
+  --color-overlay-default: #000000d9;         /* 85% black scrim */
+
+  --color-text-default: #ffffff;
+  --color-text-alternative: #b9bbbf;          /* brighter secondary for readability */
+  --color-text-muted: #7e8084;                /* readable tertiary / placeholder */
+
+  --color-border-default: #6a6b6e;
+  --color-border-muted: #ffffff24;            /* ~14% white, visible dividers */
+
+  --color-primary-default: #8b99ff;          /* blue-300 */
+  --color-primary-hover: #a6b1ff;
+  --color-primary-pressed: #6e7fff;
+  --color-primary-inverse: #131416;          /* dark text on light-blue button */
+  --color-primary-muted: #8b99ff24;
+
+  --color-success-default: #baf24a;          /* lime-100 */
+  --color-success-muted: #baf24a1f;
+  --color-error-default: #ff7584;            /* red-300 */
+  --color-error-muted: #ff75841f;
+  --color-warning-default: #f0b034;          /* yellow-200 */
+  --color-warning-muted: #f0b0341f;
+  --color-info-default: #8b99ff;
+
+  --color-shadow-default: #00000080;         /* 50% black */
+}
