@@ -9,15 +9,9 @@ export function validateIdentity(
   runtime: Runtime<Config>,
   req: LoanRequest,
 ): { valid: boolean; error?: string } {
-  // Nullifier must be a valid bytes32 hex string
-  if (!req.world_id_nullifier || req.world_id_nullifier.length < 10) {
-    return { valid: false, error: "invalid_nullifier" }
-  }
-
-  // ZK eligibility proof must have passed client-side verification
-  if (!req.zk_eligibility_proof_valid) {
-    runtime.log(`Rejected: ZK proof invalid for ${req.borrower_wallet}`)
-    return { valid: false, error: "zk_proof_invalid" }
+  // The frontend now encrypts the identity (World ID + ZK proof)
+  if (!req.encrypted_identity_blob || req.encrypted_identity_blob.length < 10) {
+    return { valid: false, error: "invalid_encrypted_identity" }
   }
 
   // Must provide at least one wallet to score
@@ -26,8 +20,7 @@ export function validateIdentity(
   }
 
   runtime.log(
-    `Identity validated: nullifier=${req.world_id_nullifier.slice(0, 10)}..., ` +
-      `wallets=${String(req.wallet_addresses.length)}`,
+    `Encrypted identity blob received for wallets=${String(req.wallet_addresses.length)}`,
   )
   return { valid: true }
 }

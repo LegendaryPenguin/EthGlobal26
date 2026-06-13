@@ -66,26 +66,14 @@ export function getWalletScore(
     }
   }
 
-  // Merge on-chain reads with frontend-provided context
-  const ctx = req.wallet_context ?? {
-    wallet_age_days: 0,
-    total_transactions: 0,
-    defi_protocols_used: [],
-  }
-
   const profile: WalletProfile = {
     walletCount: req.wallet_addresses.length,
     totalStablecoinBalanceUsdc: Number(formatUnits(totalStablecoinBalance, 6)),
-    walletAgeDays: ctx.wallet_age_days ?? 0,
-    totalTransactions: ctx.total_transactions ?? 0,
-    defiProtocolsUsed: ctx.defi_protocols_used ?? [],
   }
 
   runtime.log(
     `Wallet score: ${String(profile.walletCount)} wallets, ` +
-      `$${String(profile.totalStablecoinBalanceUsdc)} USDC, ` +
-      `${String(profile.walletAgeDays)}d age, ` +
-      `${String(profile.totalTransactions)} txs`,
+      `$${String(profile.totalStablecoinBalanceUsdc)} USDC`,
   )
 
   return profile

@@ -1,0 +1,8 @@
+{
+  "borrower_wallet": "0x1234567890abcdef1234567890abcdef12345678",
+  "wallet_addresses": [
+    "0x1234567890abcdef1234567890abcdef12345678",
+    "0x9876543210fedcba9876543210fedcba98765432"
+  ],
+  "encrypted_identity_blob": "0x_base64_ciphertext_representing_world_id_and_zk_proof_encrypted_with_tee_pubkey"
+}

@@ -64,7 +64,7 @@ const onLoanApplication = (
   // --- 3. Confidential AI inference request (TEE) ---
   let resultStr = ""
   try {
-    resultStr = assessAndClassify(runtime, walletProfile)
+    resultStr = assessAndClassify(runtime, walletProfile, req.encrypted_identity_blob)
   } catch (e) {
     runtime.log(`AI classification failed: ${String(e)}`)
     return JSON.stringify({ error: "ai_classification_failed", detail: String(e) })
