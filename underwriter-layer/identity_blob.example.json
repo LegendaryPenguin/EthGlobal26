@@ -1,0 +1,8 @@
+{
+  "world_id_nullifier": "0x0000000000000000000000000000000000000000000000000000000000abc123",
+  "zk_eligibility_proof_valid": true,
+  "age": 27,
+  "country": "United States",
+  "occupation": "freelance software developer",
+  "self_reported_yearly_income_usd": 18000
+}

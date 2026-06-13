@@ -1,0 +1,14 @@
+{
+  "name": "cre-workflow",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "postinstall": "bunx cre-setup"
+  },
+  "dependencies": {
+    "@chainlink/cre-sdk": "latest",
+    "viem": "^2.0.0",
+    "zod": "^3.23.0"
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "id": "019ec1f7-6ab6-78af-8ec5-a0b77ffbaf2f",
+  "status": "completed",
+  "output": "```json\n{\"approved\":true,\"principal\":\"5000 USDC\",\"tranche\":\"Senior\",\"riskBand\":\"A\"}\n```"
+}
