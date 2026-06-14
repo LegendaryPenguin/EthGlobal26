@@ -57,7 +57,9 @@ export function buildClassificationPrompt(
     `  - age: the borrower's age (must be >= 18 or reject)\n` +
     `  - country: free-text residing country name\n` +
     `  - occupation: free-text occupation string\n` +
-    `  - self_reported_yearly_income_usd: self-reported annual income in USD\n` +
+    `  - zk_income_floor_usd: a ZK-VERIFIED LOWER BOUND on annual income in USD. The borrower proved in ` +
+    `zero-knowledge that their true annual income is AT LEAST this amount; the exact figure is private and ` +
+    `intentionally withheld. Treat this floor as a conservative (worst-case) income for the assessment.\n` +
     `Verify that zk_eligibility_proof_valid is true and age >= 18. If either check fails, set approved to false.]\n\n` +
     `Given the following on-chain wallet profile:\n\n` +
     `${profileJson}\n\n` +
@@ -67,9 +69,11 @@ export function buildClassificationPrompt(
     `EXPECTED and must NOT, by itself, drive a poor rating or a denial.\n\n` +
     `Assess these factors, in order of importance:\n` +
     `1. Eligibility (hard gate): age must be >= 18 and zk_eligibility_proof_valid must be true, else deny.\n` +
-    `2. Income & repayment capacity (PRIMARY): does self_reported_yearly_income_usd comfortably cover the ` +
-    `requested principal? Rule of thumb: a requested principal up to ~25% of annual income is low risk, ` +
-    `up to ~50% is moderate, beyond that is high risk.\n` +
+    `2. Income & repayment capacity (PRIMARY): does the ZK-verified income floor (zk_income_floor_usd) ` +
+    `comfortably cover the requested principal? The borrower's true income is AT LEAST this floor, so assess ` +
+    `against the floor as a conservative lower bound (never penalise them for the exact figure being hidden). ` +
+    `Rule of thumb: a requested principal up to ~25% of the income floor is low risk, up to ~50% is moderate, ` +
+    `beyond that is high risk.\n` +
     `3. Occupation stability (PRIMARY): salaried/professional work is lower risk; informal/gig work is ` +
     `higher risk, but not disqualifying.\n` +
     `4. Jurisdiction (SECONDARY): borrowers in stable, well-regulated economies (e.g. United States, EU, ` +
