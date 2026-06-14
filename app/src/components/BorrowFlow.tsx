@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { IDKitSessionWidget, CredentialRequest, type IDKitResult } from "@worldcoin/idkit";
 import { formatUnits } from "viem";
+import { useProveEligibility } from "../hooks/useProveEligibility";
 
 const APP_ID = import.meta.env.VITE_WORLD_APP_ID as `app_${string}` | undefined;
 const RPC = (import.meta.env.VITE_ARC_RPC_URL as string) || "";
@@ -43,6 +44,7 @@ export function BorrowFlow() {
   const [me, setMe] = useState<SignedIn | null>(null);
   const [error, setError] = useState<string>();
   const [claim, setClaim] = useState<{ pending: boolean; tx?: string; error?: string }>({ pending: false });
+  const zk = useProveEligibility();
 
   if (!APP_ID) {
     return <p className="muted">Set VITE_WORLD_APP_ID to enable World ID sign-in (app/.env.local).</p>;
@@ -69,8 +71,13 @@ export function BorrowFlow() {
     try {
       const sid = (result as { session_id?: string }).session_id;
       if (sid) localStorage.setItem(SESSION_KEY, sid);
+      // The ZK gate: attach the in-browser eligibility proof. Income never leaves the device —
+      // only the proof + public inputs (income absent) are sent.
+      const eligibility = zk.proof
+        ? { proofHex: zk.proof.proofHex, publicInputs: zk.proof.publicInputs }
+        : undefined;
       const data = (await (await fetch("/api/world/signin", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ result }),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ result, eligibility }),
       })).json()) as { ok: boolean; error?: string; detail?: string } & SignedIn;
       if (!data.ok) throw new Error(data.detail ?? data.error ?? "sign-in failed");
       setMe(data);
@@ -151,16 +158,53 @@ export function BorrowFlow() {
   }
 
   const savedSid = localStorage.getItem(SESSION_KEY) ?? undefined;
+  const proven = zk.status === "done";
   return (
     <section className="card">
       <h2>Get your advance</h2>
       <p className="muted">
-        Sign in with World ID — prove you're a unique human and your credit passport loads instantly.
-        No wallet to connect; one is created for you.
+        Two steps: first prove privately that your income qualifies (the figure never leaves your
+        device), then sign in with World ID — your credit passport loads instantly. No wallet to
+        connect; one is created for you.
       </p>
-      <button className="btn btn--primary" style={{ marginTop: 14 }} onClick={start} disabled={status === "preparing" || status === "signing"}>
-        {status === "preparing" ? "Preparing…" : status === "signing" ? "Signing in…" : "Sign in with World ID"}
-      </button>
+
+      {/* Step 1 — the ZK gate. Proof is generated in-browser; income is a private witness. */}
+      <div className="passport-card" style={{ marginTop: 14 }}>
+        <strong>Step 1 · Prove eligibility privately</strong>
+        <p className="muted" style={{ marginTop: 6 }}>
+          Generates a zero-knowledge proof in your browser that your income clears the threshold and
+          you're not on the default list — without revealing the amount.
+        </p>
+        <button
+          className="btn"
+          style={{ marginTop: 10 }}
+          onClick={() => { void zk.prove(); }}
+          disabled={zk.status === "proving" || proven}
+        >
+          {zk.status === "proving" ? "Proving in your browser…" : proven ? "Eligibility proven ✓" : "Prove eligibility"}
+        </button>
+        {proven && zk.proof && (
+          <p className="muted" style={{ marginTop: 8 }}>
+            Proof generated in {zk.proof.ms} ms · income never left your device. Public inputs carry
+            only the threshold, default-list root, income commitment, and nullifier.
+          </p>
+        )}
+        {zk.status === "error" && zk.error && <p className="error">{zk.error}</p>}
+      </div>
+
+      {/* Step 2 — sign in, gated on the proof. */}
+      <div style={{ marginTop: 14 }}>
+        <strong>Step 2 · Sign in with World ID</strong>
+        <button
+          className="btn btn--primary"
+          style={{ marginTop: 10, display: "block" }}
+          onClick={start}
+          disabled={!proven || status === "preparing" || status === "signing"}
+        >
+          {status === "preparing" ? "Preparing…" : status === "signing" ? "Signing in…" : "Sign in with World ID"}
+        </button>
+        {!proven && <p className="muted" style={{ marginTop: 6 }}>Complete Step 1 to unlock sign-in.</p>}
+      </div>
       {ctx && (
         <IDKitSessionWidget
           open={open}
