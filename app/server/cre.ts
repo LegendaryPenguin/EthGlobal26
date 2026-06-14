@@ -10,20 +10,28 @@ import { createPublicClient, http, defineChain, parseUnits, sha256, stringToHex,
 import { sepolia } from "viem/chains";
 import { SYSTEM_PROMPT, buildClassificationPrompt, deriveIntegrityTag } from "./crePrompt.js";
 
-const TRIGGER_BASE = process.env.CRE_TRIGGER_URL || "https://judge-recount-blizzard.ngrok-free.dev";
-// Confidential AI (the TEE attester). We submit the inference DIRECTLY here when we hold the API key,
-// because the deployed CRE /trigger returns an empty async ack and never hands back the inference id.
-const CONF_AI_BASE = process.env.CONF_AI_BASE_URL || "https://confidential-ai-dev-preview.cldev.cloud";
-const CONF_AI_MODEL = process.env.CONF_AI_MODEL || "gemma4";
-const CONF_AI_API_KEY = process.env.CONF_AI_API_KEY || process.env.CRE_CONF_AI_API_KEY || "";
-const WORKFLOW_HMAC_SECRET = process.env.WORKFLOW_HMAC_SECRET || process.env.CRE_WORKFLOW_HMAC_SECRET || "";
-// Where Confidential AI posts the completed inference: the live CRE /trigger, which verifies the
-// integrity tag and settles the verdict onto CreditRegistry (Sepolia). Must match the CRE config.
-const CRE_CALLBACK_URL = process.env.CRE_CALLBACK_URL || `${TRIGGER_BASE}/trigger`;
-// CreditRegistry is deployed on ETHEREUM SEPOLIA (not Arc) — the CRE writes decisions there.
-const CREDIT_REGISTRY = (process.env.CREDIT_REGISTRY_ADDRESS as Address | undefined) ||
-  "0x6Bd85f012fA8d1e66B1f8d7fc5844A5b7B628186";
-const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL || "https://ethereum-sepolia-rpc.publicnode.com";
+// Read env LAZILY (at call time, not module load): on Vercel process.env is populated, but in the
+// Vite dev server the config callback mirrors .env into process.env AFTER this module is first
+// imported — so reading these at module top would always see empty values in dev.
+function cfg() {
+  const TRIGGER_BASE = process.env.CRE_TRIGGER_URL || "https://judge-recount-blizzard.ngrok-free.dev";
+  return {
+    TRIGGER_BASE,
+    // Confidential AI (the TEE attester). We submit the inference DIRECTLY here when we hold the API
+    // key, because the deployed CRE /trigger returns an empty async ack and never returns the id.
+    CONF_AI_BASE: process.env.CONF_AI_BASE_URL || "https://confidential-ai-dev-preview.cldev.cloud",
+    CONF_AI_MODEL: process.env.CONF_AI_MODEL || "gemma4",
+    CONF_AI_API_KEY: process.env.CONF_AI_API_KEY || process.env.CRE_CONF_AI_API_KEY || "",
+    WORKFLOW_HMAC_SECRET: process.env.WORKFLOW_HMAC_SECRET || process.env.CRE_WORKFLOW_HMAC_SECRET || "",
+    // Where Confidential AI posts the completed inference: the live CRE /trigger, which verifies the
+    // integrity tag and settles the verdict onto CreditRegistry (Sepolia). Must match the CRE config.
+    CRE_CALLBACK_URL: process.env.CRE_CALLBACK_URL || `${TRIGGER_BASE}/trigger`,
+    // CreditRegistry is deployed on ETHEREUM SEPOLIA (not Arc) — the CRE writes decisions there.
+    CREDIT_REGISTRY: ((process.env.CREDIT_REGISTRY_ADDRESS as Address | undefined) ||
+      "0x6Bd85f012fA8d1e66B1f8d7fc5844A5b7B628186") as Address,
+    SEPOLIA_RPC: process.env.SEPOLIA_RPC_URL || "https://ethereum-sepolia-rpc.publicnode.com",
+  };
+}
 
 export type Identity = {
   world_id_nullifier: string;
@@ -77,6 +85,7 @@ export async function submitApplication(opts: {
 }): Promise<{ id: string; status: string }> {
   const blob = Buffer.from(JSON.stringify(opts.identity), "utf8").toString("base64");
 
+  const { CONF_AI_API_KEY, WORKFLOW_HMAC_SECRET } = cfg();
   if (CONF_AI_API_KEY && WORKFLOW_HMAC_SECRET) {
     return submitToConfidentialAI(opts, blob);
   }
@@ -88,6 +97,7 @@ async function submitToConfidentialAI(
   opts: { borrowerWallet: Address; requestedPrincipal: string; walletAddresses: Address[]; identity: Identity },
   blob: string,
 ): Promise<{ id: string; status: string }> {
+  const { CONF_AI_BASE, CONF_AI_MODEL, CONF_AI_API_KEY, WORKFLOW_HMAC_SECRET, CRE_CALLBACK_URL } = cfg();
   // Settle re-derives this tag from the borrower in the prompt; it MUST bind the same wallet.
   const integrityTag = deriveIntegrityTag(WORKFLOW_HMAC_SECRET, opts.borrowerWallet);
   // Wallet profile is corroborating context only (never verified at settle); a thin profile is fine.
@@ -118,6 +128,7 @@ async function submitToTrigger(
   opts: { borrowerWallet: Address; requestedPrincipal: string; walletAddresses: Address[]; identity: Identity },
   blob: string,
 ): Promise<{ id: string; status: string }> {
+  const { TRIGGER_BASE } = cfg();
   const res = await fetch(`${TRIGGER_BASE}/trigger`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true" },
@@ -153,6 +164,7 @@ async function submitToTrigger(
 ///
 /// transcriptHash mirrors settle.ts: the enclave response_digest when present, else sha256(output).
 export async function readInference(id: string): Promise<Decision | null> {
+  const { CONF_AI_API_KEY, CONF_AI_BASE } = cfg();
   if (!CONF_AI_API_KEY) return null;
   let res: Response;
   try {
@@ -190,10 +202,10 @@ export async function readInference(id: string): Promise<Decision | null> {
   };
 }
 
-const sepoliaChain = { ...sepolia, rpcUrls: { default: { http: [SEPOLIA_RPC] } } } as typeof sepolia;
-
 /// 2. Read the on-chain decision for an inference id from CreditRegistry (Sepolia). null until exists.
 export async function readDecision(id: string): Promise<Decision | null> {
+  const { SEPOLIA_RPC, CREDIT_REGISTRY } = cfg();
+  const sepoliaChain = { ...sepolia, rpcUrls: { default: { http: [SEPOLIA_RPC] } } } as typeof sepolia;
   const pub = createPublicClient({ chain: sepoliaChain, transport: http(SEPOLIA_RPC) });
   try {
     const d = (await pub.readContract({
