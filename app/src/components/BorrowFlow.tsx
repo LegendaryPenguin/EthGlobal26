@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { IDKitRequestWidget, proofOfHuman, type IDKitResult } from "@worldcoin/idkit";
+import { IDKitSessionWidget, CredentialRequest, type IDKitResultSession } from "@worldcoin/idkit";
 import { formatUnits } from "viem";
 
 const APP_ID = import.meta.env.VITE_WORLD_APP_ID as `app_${string}` | undefined;
-const ACTION = (import.meta.env.VITE_WORLD_ACTION_ID as string) || "mint-credit-passport";
 const RPC = (import.meta.env.VITE_ARC_RPC_URL as string) || "";
 const IS_LOCAL = /127\.0\.0\.1|localhost/.test(RPC);
+const SESSION_KEY = "vouch.session_id";
 const STANDING = ["Unverified", "Good", "Late", "Defaulted", "Locked out"];
 
 type RpContext = { rp_id: string; nonce: string; created_at: number; expires_at: number; signature: string };
@@ -63,10 +63,12 @@ export function BorrowFlow() {
     }
   };
 
-  const onSuccess = async (result: IDKitResult) => {
+  const onSuccess = async (result: IDKitResultSession) => {
     setStatus("signing");
     setError(undefined);
     try {
+      const sid = (result as { session_id?: string }).session_id;
+      if (sid) localStorage.setItem(SESSION_KEY, sid);
       const data = (await (await fetch("/api/world/signin", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ result }),
       })).json()) as { ok: boolean; error?: string; detail?: string } & SignedIn;
@@ -148,6 +150,7 @@ export function BorrowFlow() {
     );
   }
 
+  const savedSid = localStorage.getItem(SESSION_KEY) ?? undefined;
   return (
     <section className="card">
       <h2>Get your advance</h2>
@@ -159,14 +162,13 @@ export function BorrowFlow() {
         {status === "preparing" ? "Preparing…" : status === "signing" ? "Signing in…" : "Sign in with World ID"}
       </button>
       {ctx && (
-        <IDKitRequestWidget
+        <IDKitSessionWidget
           open={open}
           onOpenChange={setOpen}
           app_id={APP_ID}
-          action={ACTION}
           rp_context={ctx}
-          allow_legacy_proofs={true}
-          preset={proofOfHuman({ signal: "vouch-credit-passport" })}
+          constraints={CredentialRequest("proof_of_human")}
+          existing_session_id={savedSid as `session_${string}` | undefined}
           onSuccess={onSuccess}
           onError={(code) => { setError(String(code)); setStatus("error"); }}
         />

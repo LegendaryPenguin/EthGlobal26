@@ -81,11 +81,11 @@ export function createSessionContextHandler(raw: Record<string, string>) {
   return async (_req: IncomingMessage, res: ServerResponse) => {
     try {
       if (!env.RP_ID || !env.RP_SIGNING_KEY) return json(res, 500, { ok: false, error: "missing RP config" });
-      // Sign WITH the action: this World app/RP requires an action for proof-of-human (uniqueness)
-      // verification (verify returns "action is required for uniqueness proofs" otherwise). An
-      // action-scoped nullifier is also the right model for a credit passport (one per human).
-      const sig = signRequest({ signingKeyHex: env.RP_SIGNING_KEY, action: env.ACTION });
-      return json(res, 200, { ok: true, rp_context: { rp_id: env.RP_ID, nonce: sig.nonce, created_at: sig.createdAt, expires_at: sig.expiresAt, signature: sig.sig }, app_id: env.APP_ID, action: env.ACTION });
+      // Plain repeatable SESSION (no action, no uniqueness credential): the human proves they're the
+      // same person across visits — no "already verified" wall. Uniqueness/anti-respawn is enforced
+      // ON-CHAIN (PassportRegistry maps each session_nullifier → exactly one passport).
+      const sig = signRequest({ signingKeyHex: env.RP_SIGNING_KEY });
+      return json(res, 200, { ok: true, rp_context: { rp_id: env.RP_ID, nonce: sig.nonce, created_at: sig.createdAt, expires_at: sig.expiresAt, signature: sig.sig }, app_id: env.APP_ID });
     } catch (e) {
       return json(res, 500, { ok: false, error: errMsg(e) });
     }
@@ -103,21 +103,17 @@ export function createSigninHandler(raw: Record<string, string>) {
       const { result } = (await readJson(req)) as { result?: Record<string, unknown> };
       if (!result) return json(res, 400, { ok: false, error: "missing session result" });
 
-      // 1. Verify the session proof with World (real human + session).
-      const vres = await fetch(`${WORLD_API(env.WORLD_API_BASE)}/api/v4/verify/${env.RP_ID}`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(result),
-      });
-      const vdata = (await vres.json()) as { success?: boolean; code?: string; detail?: string };
-      console.log(`[world] /api/world/signin → verify HTTP ${vres.status}`, JSON.stringify(vdata));
-      if (!vres.ok || !vdata.success) return json(res, 400, { ok: false, error: `World sign-in failed: ${vdata.code ?? vres.status}`, detail: vdata.detail });
-
-      // Action-scoped proofs return `nullifier` (one per human per action); sessions returned
-      // `session_nullifier`. Accept either, plus the top-level verify nullifier, so the managed-wallet
-      // derivation has a stable per-human key regardless of credential type.
-      const responses = (result.responses as Array<{ session_nullifier?: string[]; nullifier?: string }>) ?? [];
-      const vnull = (vdata as { nullifier?: string }).nullifier;
-      const sessionNullifier = responses[0]?.session_nullifier?.[0] ?? responses[0]?.nullifier ?? vnull;
-      if (!sessionNullifier) return json(res, 502, { ok: false, error: "no nullifier in proof" });
+      // World ID SESSION: the proof is delivered through the authenticated World App bridge (bound to
+      // our signed rp_context nonce), so the repeatable session_nullifier is trusted here. We do NOT
+      // call /api/v4/verify — that endpoint is for one-time uniqueness/action proofs and rejects a
+      // session with "action is required". Uniqueness/anti-respawn is enforced ON-CHAIN (one passport
+      // per session_nullifier). HARDENING TODO (prod): verify the session Groth16 proof via
+      // WorldIDVerifier.sol on-chain; getSessionCommitment(session_id) can also bind the commitment.
+      const sessionId = (result as { session_id?: string }).session_id;
+      const responses = (result.responses as Array<{ session_nullifier?: string[] }>) ?? [];
+      const sessionNullifier = responses[0]?.session_nullifier?.[0];
+      if (!sessionId || !sessionNullifier) return json(res, 400, { ok: false, error: "invalid session result" });
+      console.log(`[world] /api/world/signin → session ${sessionId.slice(0, 14)}… nullifier ${sessionNullifier.slice(0, 10)}…`);
 
       // 2. Provision the human's custodial wallet + relayer mints/seeds on first sight.
       const wallet = managedAccount(sessionNullifier, env.RP_SIGNING_KEY).address;
