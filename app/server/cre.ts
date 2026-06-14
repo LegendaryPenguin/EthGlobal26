@@ -71,8 +71,22 @@ export async function submitApplication(opts: {
       },
     }),
   });
-  const data = (await res.json()) as { id?: string; status?: string; error?: string };
-  if (!data.id) throw new Error(`trigger failed: ${data.error ?? res.status}`);
+  // The CRE /trigger should return {id, status:"queued"}. Be tolerant of how it actually responds:
+  // empty body, a bare id string, or JSON. (The live endpoint has returned an empty 200 — that means
+  // the CRE service isn't emitting the inference id yet; surfaced as a clear error below.)
+  const txt = await res.text();
+  if (!txt.trim()) {
+    throw new Error(`CRE /trigger returned an empty body (HTTP ${res.status}); expected {id,status}. The CRE service must return the inference id to poll.`);
+  }
+  let data: { id?: string; status?: string; error?: string };
+  try {
+    data = JSON.parse(txt);
+  } catch {
+    const bare = txt.trim().replace(/^"|"$/g, "");
+    if (/^[0-9a-fA-F-]{8,}$/.test(bare)) return { id: bare, status: "queued" };
+    throw new Error(`CRE /trigger returned non-JSON (HTTP ${res.status}): ${txt.slice(0, 120)}`);
+  }
+  if (!data.id) throw new Error(`CRE /trigger: no inference id (HTTP ${res.status})${data.error ? ` — ${data.error}` : ""}`);
   return { id: data.id, status: data.status ?? "queued" };
 }
 
