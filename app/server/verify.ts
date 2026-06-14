@@ -21,6 +21,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { underwrite } from "./underwrite.js";
 import { verifyEligibility, type ProofSubmission } from "./verifyEligibility.js";
 import { submitApplication, readDecision, readInference, decisionToTerms } from "./cre.js";
+import { engineBorrowAprBps } from "./marketEngine.js";
 
 const PASSPORT_ABI = [
   { type: "function", name: "verifyAndMint", stateMutability: "nonpayable", inputs: [{ name: "signal", type: "address" }, { name: "root", type: "uint256" }, { name: "nullifierHash", type: "uint256" }, { name: "proof", type: "uint256[8]" }], outputs: [] },
@@ -297,6 +298,14 @@ export function createDecisionHandler(raw: Record<string, string>) {
       const relayer = createWalletClient({ account: privateKeyToAccount(env.RELAYER_PK), chain: arc(env.RPC), transport: http(env.RPC) });
       const passportId = (await pub.readContract({ address: env.PASSPORT, abi: PASSPORT_ABI, functionName: "passportIdOf", args: [wallet] })) as Hex;
       const terms = decisionToTerms(decision, { borrower: wallet, passportId });
+      // Market-price the loan: override the static band APR with the engine's live on-chain rate.
+      if (terms.approved) {
+        const engApr = await engineBorrowAprBps(raw, terms.riskBand);
+        if (engApr && engApr > 0) {
+          terms.aprBps = engApr;
+          console.log(`[rate] engine APR for band ${terms.riskBand}: ${engApr}bps`);
+        }
+      }
       const setTermsTx = await relayer.writeContract({ address: env.REGISTRY, abi: REGISTRY_ABI, functionName: "setTerms", args: [terms] });
       await pub.waitForTransactionReceipt({ hash: setTermsTx });
       console.log(`[cre] decision ${id} → approved=${decision.approved} → setTerms ${setTermsTx}`);

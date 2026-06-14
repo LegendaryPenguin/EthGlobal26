@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { BorrowFlow } from "./components/BorrowFlow";
+import { MarketPanel } from "./components/MarketPanel";
 import { DevPanel } from "./components/DevPanel";
 
 const Arrow = () => (
@@ -199,6 +200,7 @@ export function App() {
             </div>
             <div className="rv">
               <BorrowFlow />
+              <MarketPanel />
             </div>
           </div>
         </section>
