@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-label="Veritas">
+  <rect width="64" height="64" rx="15" fill="#16110D"/>
+  <circle cx="32" cy="32" r="23" stroke="#D6553A" stroke-width="2" opacity="0.28"/>
+  <!-- A "V" whose right arm rises like a checkmark: V for Veritas, check for verified truth. -->
+  <path d="M14 19 L30 47 L34 47 L55 9" stroke="#D6553A" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

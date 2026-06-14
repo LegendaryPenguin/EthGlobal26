@@ -9,7 +9,7 @@ const Arrow = () => (
   </svg>
 );
 
-/// Vouch — single-page borrower experience, themed on the concept art (paper / ink / coral, hand-drawn
+/// Veritas — single-page borrower experience, themed on the concept art (paper / ink / coral, hand-drawn
 /// "ink" marks, scroll-reveal motion). The hero + values + steps tell the story; the real functional
 /// flow (World ID verify → terms → claim) lives in the embedded BorrowTab.
 export function App() {
@@ -69,10 +69,13 @@ export function App() {
 
       <header className="nav" id="nav">
         <div className="nav-in">
-          <a href="#top" className="brand">Vouch</a>
+          <a href="#top" className="brand" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <img src="/veritas.svg" alt="" width={26} height={26} style={{ borderRadius: 6 }} />
+            Veritas
+          </a>
           <nav className="nav-links">
             <a href="#how">How it works</a>
-            <a href="#why">Why Vouch</a>
+            <a href="#why">Why Veritas</a>
           </nav>
           <a className="btn btn--primary" href="#get">Get an advance <Arrow /></a>
         </div>
@@ -189,16 +192,16 @@ export function App() {
 
         {/* the real flow */}
         <section className="section app-sec" id="get">
-          <div className="wrap app-grid">
-            <div className="sec-head rv">
+          <div className="wrap">
+            <div className="sec-head rv" style={{ textAlign: "center", maxWidth: 680, margin: "0 auto 36px" }}>
               <p className="eyebrow">Your advance</p>
               <h2>Borrow against who you are.</h2>
               <p>
-                Verify once, and your credit passport is bound to your person — not your wallet. Connect,
-                verify, and claim your advance on Arc.
+                Verify once, and your credit passport is bound to your person — not your wallet.
+                Verify, apply, and claim your advance on Arc — step by step.
               </p>
             </div>
-            <div className="rv">
+            <div className="rv app-flow">
               <BorrowFlow />
               <MarketPanel />
             </div>
@@ -218,7 +221,7 @@ export function App() {
       <footer className="footer">
         <div className="wrap">
           <div className="foot-in">
-            <a href="#top" className="brand">Vouch</a>
+            <a href="#top" className="brand">Veritas</a>
             <nav className="foot-links">
               <a href="#how">How it works</a>
               <a href="#get">Get an advance</a>
