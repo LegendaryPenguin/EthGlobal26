@@ -4,7 +4,10 @@ export const SYSTEM_PROMPT =
   "You are a credit risk analyst for an undercollateralized lending protocol " +
   "serving the unbanked. You evaluate borrowers using a combination of " +
   "self-reported identity data (decrypted from a confidential blob) and " +
-  "on-chain wallet evidence. Never include wallet addresses, nullifiers, or " +
+  "on-chain wallet evidence. Repayment capacity is judged primarily from verified " +
+  "identity and income; on-chain assets are a secondary, corroborating signal, and " +
+  "a thin or empty on-chain history is expected for this population and is never by " +
+  "itself a reason for a poor rating. Never include wallet addresses, nullifiers, or " +
   "identifying information in your response."
 
 export function buildClassificationPrompt(profile: WalletProfile, encryptedIdentityBlob: string, borrowerWallet: string, requestedPrincipal: string, integrityTag: string): string {
@@ -35,22 +38,39 @@ export function buildClassificationPrompt(profile: WalletProfile, encryptedIdent
     `Verify that zk_eligibility_proof_valid is true and age >= 18. If either check fails, set approved to false.]\n\n` +
     `Given the following on-chain wallet profile:\n\n` +
     `${profileJson}\n\n` +
-    `Classify this borrower for an undercollateralized credit facility.\n` +
-    `Weigh these factors:\n` +
-    `- Age: borrowers under 18 must be rejected outright\n` +
-    `- Country: consider regional economic context and regulatory risk\n` +
-    `- Occupation: stable employment (e.g. salaried engineer) is lower risk than informal/gig work\n` +
-    `- Self-reported income vs. on-chain stablecoin balance: large discrepancies are a red flag\n` +
-    `- Stablecoin balances: indicate liquidity and repayment capacity\n` +
-    `- Higher risk borrowers go to Junior tranche, lower risk to Senior\n` +
-    `- Risk bands: A (lowest risk) through D (highest risk)\n` +
-    `- Evaluate if the "Requested principal" is reasonable based on their capacity. If reasonable, approve it and return the exact requested amount. If too high or unsafe, reject the loan entirely (approved: false).\n` +
+    `Classify this borrower for an undercollateralized credit facility.\n\n` +
+    `IMPORTANT CONTEXT: This protocol serves the unbanked and the crypto-curious. Many creditworthy ` +
+    `borrowers have little or no on-chain history yet. A low or zero on-chain stablecoin balance is ` +
+    `EXPECTED and must NOT, by itself, drive a poor rating or a denial.\n\n` +
+    `Assess these factors, in order of importance:\n` +
+    `1. Eligibility (hard gate): age must be >= 18 and zk_eligibility_proof_valid must be true, else deny.\n` +
+    `2. Income & repayment capacity (PRIMARY): does self_reported_yearly_income_usd comfortably cover the ` +
+    `requested principal? Rule of thumb: a requested principal up to ~25% of annual income is low risk, ` +
+    `up to ~50% is moderate, beyond that is high risk.\n` +
+    `3. Occupation stability (PRIMARY): salaried/professional work is lower risk; informal/gig work is ` +
+    `higher risk, but not disqualifying.\n` +
+    `4. Jurisdiction (SECONDARY): borrowers in stable, well-regulated economies (e.g. United States, EU, ` +
+    `UK, Canada) carry lower regional risk; higher-risk or sanctioned jurisdictions raise it.\n` +
+    `5. On-chain assets (SECONDARY / BONUS ONLY): any stablecoin balance or wallet activity is positive ` +
+    `corroboration that IMPROVES the rating. Its absence is neutral, never a penalty. Do NOT treat a gap ` +
+    `between self-reported income and on-chain balance as a red flag — that gap is normal for the unbanked.\n\n` +
+    `Risk band rubric (A = lowest risk ... D = highest risk):\n` +
+    `- A: stable, verifiable income in a low-risk jurisdiction, principal small relative to income, plus some on-chain corroboration.\n` +
+    `- B: stable income and/or professional occupation in a reasonable jurisdiction, principal well within capacity; on-chain assets light or moderate. (Typical band for a verified earner making a sensible request.)\n` +
+    `- C: moderate or informal income, or a higher-risk jurisdiction, or a principal that is a large share of income, but still serviceable.\n` +
+    `- D: weak or unverifiable signals, failed eligibility, or a principal that clearly exceeds plausible repayment capacity.\n\n` +
+    `CALIBRATION: a borrower who passes eligibility and has stable, verifiable income sufficient to service ` +
+    `the requested principal should land at B (and no worse than C) even with little or no on-chain balance. ` +
+    `Reserve D for genuine red flags, not merely thin on-chain history.\n\n` +
+    `Tranche: lower-risk borrowers (A/B) go to the Senior tranche; higher-risk borrowers (C/D) go to Junior.\n` +
+    `Principal: if the requested principal is reasonable for the assessed capacity, approve and return the exact ` +
+    `requested amount. If it clearly exceeds safe capacity, reject the loan entirely (approved: false).\n` +
     `- denialReason: when approved is false, give a SHORT (max ~15 words) general explanation of the main risk factor, e.g. "Requested amount exceeds assessed repayment capacity" or "Insufficient on-chain financial history". When approved is true, set it to null.\n` +
     `  CRITICAL: denialReason MUST NOT reveal any confidential or identifying data — no income figures, age, country, occupation, wallet addresses, balances, or nullifiers. Keep it generic.\n\n` +
     `Respond with ONLY a valid JSON object:\n` +
     `{\n` +
     `  "approved": true,\n` +
-    `  "principal": "${requestedPrincipal} USDC",\n` +
+    `  "principal": "${requestedPrincipal}",\n` +
     `  "tranche": "Senior|Junior",\n` +
     `  "riskBand": "A|B|C|D",\n` +
     `  "denialReason": null\n` +
