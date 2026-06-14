@@ -7,7 +7,17 @@ import type { ChainId } from "../data/mock";
 const ENV = (import.meta as { env?: Record<string, string> }).env ?? {};
 
 // Vouch contracts deployed on Arc Testnet (5042002).
-export const ARC_TRANCHE_POOL = (ENV.VITE_TRANCHE_POOL_ADDRESS as `0x${string}` | undefined) ?? "0x602dB37B2275450717Aa8f1935dC5bbF24a70E0d";
+export const ARC_TRANCHE_POOL = (ENV.VITE_TRANCHE_POOL_ADDRESS as `0x${string}` | undefined) ?? "0x73bfc359df81c897ee7c04c778c2491ccb53f4d7";
+
+// MarketRateEngine on Arc — the on-chain dynamic rate/yield brain (Track 1).
+export const RATE_ENGINE = (ENV.VITE_RATE_ENGINE_ADDRESS as `0x${string}` | undefined) ?? "0x74D8d8BFBDcdDaf888e1f745f071afFB566919dB";
+export const marketRateEngineAbi = [
+  { type: "function", name: "currentBorrowAprBps", stateMutability: "view", inputs: [], outputs: [{ type: "uint16" }] },
+  { type: "function", name: "currentSupplyYieldBps", stateMutability: "view", inputs: [], outputs: [{ type: "uint16" }] },
+  { type: "function", name: "utilizationBps", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "willingLenders", stateMutability: "view", inputs: [], outputs: [{ type: "uint32" }] },
+  { type: "function", name: "willingBorrowers", stateMutability: "view", inputs: [], outputs: [{ type: "uint32" }] },
+] as const;
 
 // USDC token address per source chain (testnet).
 export const USDC_ADDRESS: Partial<Record<ChainId, `0x${string}`>> = {
