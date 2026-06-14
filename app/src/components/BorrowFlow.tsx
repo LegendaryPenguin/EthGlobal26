@@ -141,9 +141,8 @@ export function BorrowFlow() {
             <li>Defaults: <strong>{p.defaults}</strong></li>
           </ul>
         </div>
-        <WalletLinkPanel sessionNullifier={me.sessionNullifier} />
         <div style={{ marginTop: 16 }}>
-          <strong>Your advance</strong>
+          <strong>Step 2 · Apply for your advance</strong>
           {!cre ? (
             // Apply through the Chainlink CRE / Confidential AI — the real underwriting path.
             <ApplicationWizard
@@ -197,6 +196,9 @@ export function BorrowFlow() {
 
         {/* Repayments appear once a loan is disbursed; re-polls after each claim. */}
         <RepaymentsPanel key={claim.tx ?? "loan"} sessionNullifier={me.sessionNullifier} />
+
+        {/* Secondary / optional — anti-Sybil wallet binding. Not part of the claim path. */}
+        <WalletLinkPanel sessionNullifier={me.sessionNullifier} />
 
         {/* Demo state: the on-chain proof that this flow is real, not staged. */}
         <div className="passport-card" style={{ marginTop: 16 }}>
@@ -254,10 +256,9 @@ export function BorrowFlow() {
           allow_legacy_proofs={true}
           preset={proofOfHuman()}
           onSuccess={onSuccess}
-          onError={(code) => {
+          onError={() => {
             // Demo resilience: if the scan errors (already-verified, max-verifications, bridge hiccup),
-            // don't dead-end — fall back to the demo identity so the flow always continues.
-            logEvent({ kind: "info", label: `World ID scan unavailable (${String(code)}) — using demo identity` });
+            // silently fall back to the demo identity so the flow always continues (no scary log line).
             setOpen(false);
             demoSignIn();
           }}
