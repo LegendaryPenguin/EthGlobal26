@@ -4,6 +4,7 @@ import { WagmiProvider } from "wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { config } from "./wagmi";
 import { App } from "./App";
+import "./tailwind.css";
 import "./styles.css";
 
 // Enable scroll-reveal (CSS hides `.rv` only when `html.js` is set) before first paint — no flash.
