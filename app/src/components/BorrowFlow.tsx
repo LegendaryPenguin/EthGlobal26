@@ -7,7 +7,6 @@ import { logEvent, arcTx } from "../devlog";
 const APP_ID = import.meta.env.VITE_WORLD_APP_ID as `app_${string}` | undefined;
 const RPC = (import.meta.env.VITE_ARC_RPC_URL as string) || "";
 const IS_LOCAL = /127\.0\.0\.1|localhost/.test(RPC);
-const SESSION_KEY = "vouch.session_id";
 // World ID environment must match where your app_id + RP signing key are registered. Your app shows
 // BOTH Staging and Production active — if the scan fails with "try again", flip VITE_WORLD_ENV.
 const WORLD_ENV = (((import.meta.env.VITE_WORLD_ENV as string) || "production") === "staging" ? "staging" : "production") as "production" | "staging";
@@ -73,8 +72,8 @@ export function BorrowFlow() {
     setStatus("signing");
     setError(undefined);
     try {
-      const sid = (result as { session_id?: string }).session_id;
-      if (sid) localStorage.setItem(SESSION_KEY, sid);
+      // Each sign-in is a FRESH World ID session (no existing_session_id resume) so a new person can
+      // always scan a new QR — the demo expects many distinct humans, not one returning account.
       // Sign-in proves PERSONHOOD only — no eligibility proof here. The ZK gate runs later at /apply,
       // over the income the human self-reports in the application wizard.
       const data = (await (await fetch("/api/world/signin", {
@@ -188,7 +187,6 @@ export function BorrowFlow() {
     );
   }
 
-  const savedSid = localStorage.getItem(SESSION_KEY) ?? undefined;
   return (
     <section className="card">
       <h2>Get your advance</h2>
@@ -221,7 +219,6 @@ export function BorrowFlow() {
           environment={WORLD_ENV}
           rp_context={ctx}
           constraints={CredentialRequest("proof_of_human")}
-          existing_session_id={savedSid as `session_${string}` | undefined}
           onSuccess={onSuccess}
           onError={(code) => { setError(`World ID error: ${String(code)}`); setStatus("error"); }}
         />
