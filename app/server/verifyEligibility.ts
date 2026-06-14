@@ -15,7 +15,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Policy the gate enforces (must match circuits/src/main.nr witness + app/src/zk/eligibility.ts).
-export const POLICY_THRESHOLD = "0x0000000000000000000000000000000000000000000000000000000000000bb8"; // 3000
+// Reconciled to YEARLY income: 12000 (= 0x2ee0). Mirror in app/src/zk/eligibility.ts (POLICY_THRESHOLD).
+export const POLICY_THRESHOLD = "0x0000000000000000000000000000000000000000000000000000000000002ee0"; // 12000 (yearly)
 export const POLICY_DEFAULT_LIST_ROOT =
   "0x00f9952fe025cd3ad8ff1346fb409cdb22c9e7d5eb266d74d2e1b156a5d438ba";
 
