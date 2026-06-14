@@ -97,7 +97,7 @@ export const PORTFOLIO_ROWS: PortfolioRow[] = [
 
 // Vouch product (the real entry inside Earn). (DESIGN_SPEC §5 Screen 2)
 export const VOUCH = {
-  name: "Vouch — Credit Passport",
+  name: "Veritas — Credit Passport",
   asset: "USDC" as TokenSymbol,
   apyRange: "6% – 26% APY",
   tag: "Credit Passport · real-income-backed",
