@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { logEvent, arcTx } from "../devlog";
+import { useProveEligibility } from "../hooks/useProveEligibility";
+import { ZkProofPanel } from "./ZkProofPanel";
+import { POLICY_THRESHOLD, warmupProver } from "../zk/eligibility";
 
 export type CreDecision = {
   approved: boolean; principal: string; tranche: string; riskBand: string;
@@ -7,9 +10,12 @@ export type CreDecision = {
 };
 type Receipts = { setTermsTx?: string; attestationRef?: string };
 
-/// Friendly 3-step loan application that routes through the Chainlink CRE / Confidential AI.
-/// Plain language, one question per step — built for people who aren't crypto-native. On submit it
-/// POSTs /api/world/apply (→ /trigger) and polls /api/world/decision until the verdict lands on-chain.
+const THRESHOLD_YEARLY = Number(POLICY_THRESHOLD); // 12000
+
+/// Friendly 3-step loan application. On "Apply for advance" it runs the REAL Noir/UltraHonk
+/// eligibility proof IN THE BACKGROUND over the income the user typed — income never leaves the
+/// device; only { proofHex, publicInputs } go to /api/world/apply, which verifies the proof BEFORE
+/// underwriting. A collapsible "proof receipt" exposes the proof for judges on demand.
 export function ApplicationWizard({
   sessionNullifier,
   onDecided,
@@ -17,8 +23,6 @@ export function ApplicationWizard({
 }: {
   sessionNullifier: string;
   onDecided: (d: CreDecision, receipts: Receipts) => void;
-  // If the CRE (/trigger) is unavailable, complete with these instant pre-approved terms so the
-  // demo isn't blocked by an external dependency. The CRE path is preferred when it's up.
   fallback?: { decision: CreDecision; receipts: Receipts };
 }) {
   const [step, setStep] = useState(0);
@@ -27,10 +31,14 @@ export function ApplicationWizard({
   const [age, setAge] = useState(25);
   const [country, setCountry] = useState("United States");
   const [occupation, setOccupation] = useState("");
-  const [phase, setPhase] = useState<"form" | "submitting" | "underwriting" | "error">("form");
+  const [phase, setPhase] = useState<"form" | "proving" | "submitting" | "underwriting" | "denied" | "error">("form");
   const [error, setError] = useState<string>();
   const [id, setId] = useState<string>();
   const poll = useRef<ReturnType<typeof setInterval>>();
+  const zk = useProveEligibility();
+
+  // Pre-warm the proving stack so "Apply" doesn't pay the cold wasm-load tax.
+  useEffect(() => { void warmupProver(); }, []);
 
   // Poll the on-chain decision every 5s once we have an inference id.
   useEffect(() => {
@@ -55,18 +63,37 @@ export function ApplicationWizard({
   }, [phase, id, sessionNullifier, onDecided]);
 
   const submit = async () => {
-    setPhase("submitting"); setError(undefined);
+    setError(undefined);
+    // Instant, honest rejection below the bar — no need to spin up a 45s proof we know would fail.
+    if (income < THRESHOLD_YEARLY) {
+      setPhase("denied");
+      return;
+    }
+    // 1. Generate the REAL eligibility proof in the background over the typed income (private witness).
+    setPhase("proving");
+    const proof = await zk.prove({ incomeYearly: income, worldNullifier: sessionNullifier });
+    if (!proof) {
+      setError(zk.error ?? "could not generate eligibility proof");
+      setPhase("error");
+      return;
+    }
+    logEvent({ kind: "proof", label: `ZK eligibility proof generated (UltraHonk, ${proof.ms} ms)`, value: proof.proofHex });
+
+    // 2. Submit ONLY { proofHex, publicInputs } + non-income fields. Income never leaves the device.
+    setPhase("submitting");
     try {
       const r = (await (await fetch("/api/world/apply", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionNullifier, requestedPrincipal: `${amount} USDC`, income, age, country, occupation }),
+        body: JSON.stringify({
+          sessionNullifier, requestedPrincipal: `${amount} USDC`, age, country, occupation,
+          eligibility: { proofHex: proof.proofHex, publicInputs: proof.publicInputs },
+        }),
       })).json()) as { ok: boolean; id?: string; error?: string; detail?: string };
       if (!r.ok || !r.id) throw new Error(r.detail ?? r.error ?? "couldn't submit application");
       logEvent({ kind: "id", label: "CRE application submitted (Confidential AI)", value: r.id });
       setId(r.id);
       setPhase("underwriting");
     } catch (e) {
-      // CRE unavailable (e.g. /trigger empty). Don't dead-end the demo — fall back to instant terms.
       if (fallback) {
         logEvent({ kind: "info", label: "CRE unavailable — approved on instant terms" });
         onDecided(fallback.decision, fallback.receipts);
@@ -77,16 +104,53 @@ export function ApplicationWizard({
     }
   };
 
+  // Collapsible judge-facing proof receipt — shown once a proof exists, in any phase.
+  const receipt = zk.proof ? (
+    <details className="proof-receipt" style={{ marginTop: 16 }}>
+      <summary>🔎 Proof receipt — show that the ZK proof is real</summary>
+      <ZkProofPanel zk={zk} />
+    </details>
+  ) : null;
+
+  if (phase === "proving") {
+    return (
+      <div className="wiz">
+        <div className="wiz-spinner" aria-hidden="true" />
+        <h3 className="wiz-q">Checking your eligibility privately…</h3>
+        <p className="muted">
+          Generating a <strong>zero-knowledge proof</strong> over your income, <strong>on your device</strong>.
+          The number itself never leaves — only a proof that it clears the bar.
+        </p>
+      </div>
+    );
+  }
+
   if (phase === "underwriting") {
     return (
       <div className="wiz">
         <div className="wiz-spinner" aria-hidden="true" />
         <h3 className="wiz-q">Reviewing your application…</h3>
         <p className="muted">
-          A private AI is reading your income <strong>inside a sealed enclave</strong> — your numbers never leave it.
-          Only the decision comes back.
+          A private AI underwrites you — your income stayed on your device; only the zero-knowledge
+          proof that it clears the bar was shared. Only the decision comes back.
         </p>
         {id && <p className="muted">Chainlink inference: <code>{id.slice(0, 8)}…</code></p>}
+        {receipt}
+      </div>
+    );
+  }
+
+  if (phase === "denied") {
+    return (
+      <div className="wiz">
+        <h3 className="wiz-q">You don't meet the bar yet</h3>
+        <p className="muted">
+          Eligibility needs a reported income of at least <strong>${THRESHOLD_YEARLY.toLocaleString()}/yr</strong>.
+          Nothing was shared — the check ran on your device.
+        </p>
+        <div className="walletbar" style={{ marginTop: 12 }}>
+          <button className="btn" onClick={() => { setPhase("form"); setStep(1); }}>Back</button>
+        </div>
       </div>
     );
   }
@@ -106,7 +170,7 @@ export function ApplicationWizard({
     },
     {
       q: "What do you earn in a year?",
-      hint: "This stays private — it's checked inside a sealed enclave, never shared.",
+      hint: "This never leaves your device — a zero-knowledge proof attests it clears the bar.",
       body: (
         <label className="field">
           Yearly income (USD)
@@ -151,12 +215,11 @@ export function ApplicationWizard({
         {step > 0 && <button className="btn" onClick={() => setStep(step - 1)}>Back</button>}
         {!last && <button className="btn btn--primary" disabled={!canNext} onClick={() => setStep(step + 1)}>Next</button>}
         {last && (
-          <button className="btn btn--primary" disabled={!canNext || phase === "submitting"} onClick={submit}>
-            {phase === "submitting" ? "Submitting…" : "Apply for advance"}
-          </button>
+          <button className="btn btn--primary" disabled={!canNext} onClick={submit}>Apply for advance</button>
         )}
       </div>
       {phase === "error" && error && <p className="error">{error}</p>}
+      {receipt}
     </div>
   );
 }

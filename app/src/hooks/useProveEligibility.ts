@@ -4,6 +4,7 @@ import {
   verifyEligibilityProof,
   tamperProofHex,
   type EligibilityProof,
+  type ProveOpts,
 } from "../zk/eligibility";
 
 type Status = "idle" | "proving" | "done" | "error";
@@ -29,12 +30,12 @@ export function useProveEligibility() {
   const [error, setError] = useState<string>();
   const [verdict, setVerdict] = useState<Verdict>({ kind: "idle" });
 
-  const prove = useCallback(async () => {
+  const prove = useCallback(async (opts: ProveOpts) => {
     setStatus("proving");
     setError(undefined);
     setVerdict({ kind: "idle" });
     try {
-      const p = await proveEligibility();
+      const p = await proveEligibility(opts);
       setProof(p);
       setStatus("done");
       return p;
