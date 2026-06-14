@@ -65,6 +65,55 @@ function toHex(bytes: Uint8Array): string {
   return s;
 }
 
+function fromHex(hex: string): Uint8Array {
+  const clean = hex.startsWith("0x") ? hex.slice(2) : hex;
+  const out = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  return out;
+}
+
+// Cache the circuit artifact so verify (after prove) doesn't re-fetch.
+let _circuitPromise: Promise<{ bytecode: string }> | null = null;
+function loadCircuit(): Promise<{ bytecode: string }> {
+  if (!_circuitPromise) {
+    _circuitPromise = fetch("/vouch_eligibility.json").then((r) => {
+      if (!r.ok) throw new Error("could not load circuit artifact");
+      return r.json();
+    });
+  }
+  return _circuitPromise;
+}
+
+/**
+ * Verify a proof IN THE BROWSER with the same UltraHonk verifier the backend / on-chain gate uses.
+ * Returns true for a valid proof, false for a tampered/invalid one. Fast (no proving).
+ */
+export async function verifyEligibilityProof(proofHex: string, publicInputs: string[]): Promise<boolean> {
+  const { Barretenberg, UltraHonkBackend } = await import("@aztec/bb.js");
+  const circuit = await loadCircuit();
+  const api = await Barretenberg.new();
+  try {
+    const backend = new UltraHonkBackend(circuit.bytecode, api);
+    return await backend.verifyProof({ proof: fromHex(proofHex), publicInputs });
+  } catch {
+    // bb throws on malformed proofs — for the demo that *is* a rejection.
+    return false;
+  } finally {
+    await api.destroy();
+  }
+}
+
+/**
+ * Forge attempt for the demo: flip one byte of the proof. A sound proof system rejects this with
+ * overwhelming probability — that's what makes the proof meaningful, not just present.
+ */
+export function tamperProofHex(proofHex: string): string {
+  const bytes = fromHex(proofHex);
+  const i = Math.floor(bytes.length / 2); // somewhere in the middle of the proof body
+  bytes[i] ^= 0xff;
+  return toHex(bytes);
+}
+
 /**
  * Generate the eligibility proof in the browser. Lazily imports the proving stack so the heavy
  * wasm is only pulled when the borrower actually clicks "prove" (keeps it out of the main bundle).
