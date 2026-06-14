@@ -11,7 +11,8 @@ const short = (v: string) => (v.length > 18 ? `${v.slice(0, 10)}…${v.slice(-6)
 /// links. The judge-facing "this is real" panel. Collapsible; lives fixed on the right.
 export function DevPanel() {
   const events = useSyncExternalStore(subscribeDevlog, getDevlog, getDevlog);
-  const [open, setOpen] = useState(true);
+  // Start minimized to a side tab so it never covers the app; click the tab to expand the drawer.
+  const [open, setOpen] = useState(false);
 
   return (
     <>
