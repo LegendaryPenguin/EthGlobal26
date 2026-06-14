@@ -4,6 +4,7 @@ import { formatUnits } from "viem";
 import { ApplicationWizard, type CreDecision, USD_PER_USDC } from "./ApplicationWizard";
 import { WalletLinkPanel } from "./WalletLinkPanel";
 import { AttestationPanel } from "./AttestationPanel";
+import { RepaymentsPanel } from "./RepaymentsPanel";
 import { logEvent, arcTx } from "../devlog";
 
 const APP_ID = import.meta.env.VITE_WORLD_APP_ID as `app_${string}` | undefined;
@@ -193,6 +194,9 @@ export function BorrowFlow() {
             onChainRef={cre.receipts.attestationRef ?? cre.decision.transcriptHash}
           />
         )}
+
+        {/* Repayments appear once a loan is disbursed; re-polls after each claim. */}
+        <RepaymentsPanel key={claim.tx ?? "loan"} sessionNullifier={me.sessionNullifier} />
 
         {/* Demo state: the on-chain proof that this flow is real, not staged. */}
         <div className="passport-card" style={{ marginTop: 16 }}>
