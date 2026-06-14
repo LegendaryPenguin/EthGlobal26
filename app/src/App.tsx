@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { BorrowFlow } from "./components/BorrowFlow";
+import { DevPanel } from "./components/DevPanel";
 
 const Arrow = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -53,6 +54,8 @@ export function App() {
 
   return (
     <>
+      <DevPanel />
+
       {/* hand-drawn "ink" roughen filter, referenced by .ink-art */}
       <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
         <defs>

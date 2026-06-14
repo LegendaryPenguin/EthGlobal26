@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { logEvent, arcTx } from "../devlog";
 
 export type CreDecision = {
   approved: boolean; principal: string; tranche: string; riskBand: string;
@@ -38,6 +39,8 @@ export function ApplicationWizard({
         })).json()) as { decided?: boolean; decision?: CreDecision; receipts?: Receipts };
         if (d.decided && d.decision) {
           if (poll.current) clearInterval(poll.current);
+          logEvent({ kind: "proof", label: `CRE verdict: ${d.decision.approved ? "approved" : "denied"} · band ${d.decision.riskBand}`, value: d.decision.transcriptHash });
+          if (d.receipts?.setTermsTx) logEvent({ kind: "tx", label: "Terms written on Arc (setTerms)", value: d.receipts.setTermsTx, link: arcTx(d.receipts.setTermsTx) });
           onDecided(d.decision, d.receipts ?? {});
         }
       } catch { /* keep polling */ }
@@ -55,6 +58,7 @@ export function ApplicationWizard({
         body: JSON.stringify({ sessionNullifier, requestedPrincipal: `${amount} USDC`, income, age, country, occupation }),
       })).json()) as { ok: boolean; id?: string; error?: string; detail?: string };
       if (!r.ok || !r.id) throw new Error(r.detail ?? r.error ?? "couldn't submit application");
+      logEvent({ kind: "id", label: "CRE application submitted (Confidential AI)", value: r.id });
       setId(r.id);
       setPhase("underwriting");
     } catch (e) {

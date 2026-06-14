@@ -219,3 +219,28 @@ html.js .mark.rv.in { opacity: 1; transform: none; }
 .wiz-range-ends { display: flex; justify-content: space-between; font-size: 12px; color: var(--faint); margin-top: 2px; }
 .wiz-spinner { width: 34px; height: 34px; margin: 6px 0 14px; border: 3px solid var(--line-2); border-top-color: var(--coral); border-radius: 50%; animation: wiz-spin 0.8s linear infinite; }
 @keyframes wiz-spin { to { transform: rotate(360deg); } }
+
+/* live dev / proof feed panel */
+.dp-toggle { position: fixed; top: 90px; right: 0; z-index: 60; display: flex; align-items: center; gap: 7px;
+  background: var(--ink); color: var(--paper); border: none; border-radius: 10px 0 0 10px; padding: 9px 13px;
+  font-size: 12.5px; font-weight: 600; cursor: pointer; box-shadow: 0 6px 20px rgba(0,0,0,0.18); }
+.dp-toggle .dp-count { background: var(--coral); color: #fff; border-radius: 999px; padding: 0 7px; font-size: 11px; }
+.dp { position: fixed; top: 132px; right: 14px; bottom: 14px; width: min(360px, 88vw); z-index: 59;
+  background: var(--card); border: 1px solid var(--line-2); border-radius: 14px; box-shadow: 0 24px 60px rgba(40,30,15,0.18);
+  display: flex; flex-direction: column; overflow: hidden; }
+.dp-head { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.dp-head strong { display: block; font-size: 14px; }
+.dp-head .muted { font-size: 11.5px; }
+.dp-body { flex: 1; overflow-y: auto; padding: 6px 0; }
+.dp-empty { padding: 18px 16px; font-size: 13px; }
+.dp-row { display: flex; gap: 10px; padding: 9px 16px; border-bottom: 1px solid var(--line); }
+.dp-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; }
+.dp-dot--tx { background: var(--coral); } .dp-dot--proof { background: var(--pine); }
+.dp-dot--id { background: #c08a2e; } .dp-dot--info { background: var(--faint); } .dp-dot--err { background: var(--err); }
+.dp-row-main { flex: 1; min-width: 0; }
+.dp-row-top { display: flex; justify-content: space-between; gap: 8px; }
+.dp-label { font-size: 13px; font-weight: 600; color: var(--ink); }
+.dp-time { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; flex: none; }
+.dp-val { font-size: 11.5px; color: var(--soft); word-break: break-all; }
+.dp-val--link { color: var(--coral); text-decoration: none; border-bottom: 1px solid var(--line-2); }
+@media (max-width: 720px) { .dp { display: none; } }
