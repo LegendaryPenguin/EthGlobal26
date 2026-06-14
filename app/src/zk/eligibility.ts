@@ -67,9 +67,19 @@ function randomBlinding(): string {
   return toHex(b);
 }
 
-/** Field-normalise the World nullifier to use as the circuit's borrower_secret. */
+// BN254 scalar field modulus — every Field value fed to the Noir circuit must be < this.
+const BN254_FIELD_MODULUS =
+  21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+
+/**
+ * Field-normalise the World nullifier into a valid BN254 Field for the circuit's borrower_secret.
+ * A World ID session nullifier is a full 256-bit value that can EXCEED the field modulus (~2^254),
+ * which the prover rejects ("exceeds field modulus"). Reducing mod the modulus keeps it deterministic
+ * per human (same nullifier -> same secret), so the proof stays bound to the same identity.
+ */
 function secretFromWorldNullifier(worldNullifier: string): string {
-  return worldNullifier?.startsWith("0x") ? worldNullifier : "0x" + BigInt(worldNullifier || "0").toString(16);
+  const raw = BigInt(worldNullifier && worldNullifier.length ? worldNullifier : "0");
+  return "0x" + (raw % BN254_FIELD_MODULUS).toString(16);
 }
 
 let _eligCircuit: Promise<{ bytecode: string }> | null = null;
