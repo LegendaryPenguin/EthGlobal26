@@ -43,6 +43,25 @@ function json(res: ServerResponse, code: number, body: unknown) {
   res.end(JSON.stringify(body));
 }
 
+/// Read the engine's live market-priced borrow APR (bps) for a risk band, so the LoanRegistry terms
+/// reflect on-chain conditions. Returns null on any error (caller falls back to the static APR).
+export async function engineBorrowAprBps(raw: Record<string, string>, band: number): Promise<number | null> {
+  try {
+    const rpc = raw.VITE_ARC_RPC_URL || "https://rpc.testnet.arc.network";
+    const engine = (raw.VITE_RATE_ENGINE_ADDRESS || RATE_ENGINE_DEFAULT) as Address;
+    const pub = createPublicClient({ chain: arc(rpc), transport: http(rpc) });
+    const apr = await pub.readContract({
+      address: engine,
+      abi: [{ type: "function", name: "borrowAprForBand", stateMutability: "view", inputs: [{ type: "uint8" }], outputs: [{ type: "uint16" }] }] as const,
+      functionName: "borrowAprForBand",
+      args: [band],
+    });
+    return Number(apr);
+  } catch {
+    return null;
+  }
+}
+
 export function createMarketHandler(raw: Record<string, string>) {
   const rpc = raw.VITE_ARC_RPC_URL || "https://rpc.testnet.arc.network";
   const engine = (raw.VITE_RATE_ENGINE_ADDRESS || RATE_ENGINE_DEFAULT) as Address;
