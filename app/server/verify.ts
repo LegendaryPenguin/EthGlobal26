@@ -20,7 +20,7 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { underwrite } from "./underwrite.js";
 import { verifyEligibility, type ProofSubmission } from "./verifyEligibility.js";
-import { submitApplication, readDecision, decisionToTerms } from "./cre.js";
+import { submitApplication, readDecision, readInference, decisionToTerms } from "./cre.js";
 
 const PASSPORT_ABI = [
   { type: "function", name: "verifyAndMint", stateMutability: "nonpayable", inputs: [{ name: "signal", type: "address" }, { name: "root", type: "uint256" }, { name: "nullifierHash", type: "uint256" }, { name: "proof", type: "uint256[8]" }], outputs: [] },
@@ -244,9 +244,11 @@ export function createApplyHandler(raw: Record<string, string>) {
   };
 }
 
-/// POST /api/world/decision — poll CreditRegistry (Sepolia) for the CRE verdict; once it exists, map
-/// it to Vouch Terms and write setTerms on Arc so LoanVault.claim() can disburse. Returns decided:false
-/// while still pending (client polls every ~5s).
+/// POST /api/world/decision — poll for the underwriting verdict. We read the attested decision
+/// DIRECTLY from the Confidential AI TEE (the source of truth the CRE itself re-fetches); if the CRE
+/// has also settled it on-chain (CreditRegistry/Sepolia) we use that instead. Once a verdict exists we
+/// map it to Vouch Terms and write setTerms on Arc so LoanVault.claim() can disburse. Returns
+/// decided:false while still pending (client polls every ~5s).
 export function createDecisionHandler(raw: Record<string, string>) {
   const env = readEnv(raw);
   return async (req: IncomingMessage, res: ServerResponse) => {
@@ -256,7 +258,9 @@ export function createDecisionHandler(raw: Record<string, string>) {
       const { sessionNullifier, id } = (await readJson(req)) as { sessionNullifier?: string; id?: string };
       if (!sessionNullifier || !id) return json(res, 400, { ok: false, error: "missing sessionNullifier or id" });
 
-      const decision = await readDecision(id);
+      // Prefer the on-chain CRE settle if present; otherwise read the attested verdict straight from
+      // the TEE (the same inference the CRE verifies) so the flow isn't gated on the CRE's signer.
+      const decision = (await readDecision(id)) ?? (await readInference(id));
       if (!decision) return json(res, 200, { ok: true, decided: false });
 
       // Verdict is in → write it onto Vouch's seam (Arc) so the borrower can claim.
