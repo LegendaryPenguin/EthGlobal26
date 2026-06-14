@@ -36,3 +36,20 @@ services:
         sync: false
       - key: WORKFLOW_HMAC_SECRET
         sync: false
+
+  # Lender SPA + /iris CCTP-attestation proxy (no backend secrets needed — reads chains via RPC).
+  - type: web
+    name: vouch-lender
+    runtime: node
+    rootDir: metamask-lender
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run serve
+    healthCheckPath: /
+    envVars:
+      - key: VITE_ARC_RPC_URL
+        value: https://rpc.testnet.arc.network
+      - key: VITE_RATE_ENGINE_ADDRESS
+        value: "0x74D8d8BFBDcdDaf888e1f745f071afFB566919dB"
+      - key: VITE_TRANCHE_POOL_ADDRESS
+        value: "0x73bfc359df81c897ee7c04c778c2491ccb53f4d7"
