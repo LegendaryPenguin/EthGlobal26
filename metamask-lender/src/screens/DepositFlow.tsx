@@ -31,8 +31,8 @@ function VouchProductHeader() {
     <div className="prodhead">
       <VouchMark size={44} />
       <div>
-        <div className="t-heading-sm">Vouch — Credit Passport</div>
-        <div className="t-body-sm text-alt">6% – 26% APY · USDC</div>
+        <div className="t-heading-sm">Veritas — Credit Passport</div>
+        <div className="t-body-sm text-alt">6% – 14% APY · USDC</div>
       </div>
     </div>
   );
@@ -45,9 +45,10 @@ function Tranche() {
     <div className="flow-narrow">
       <FlowHeader step="tranche" />
       <VouchProductHeader />
-      <h2 className="t-heading-md" style={{ margin: "20px 0 4px" }}>Choose your tranche</h2>
+      <h2 className="t-heading-md" style={{ margin: "20px 0 4px" }}>Choose your risk strategy</h2>
       <p className="t-body-sm text-alt" style={{ margin: "0 0 16px" }}>
-        Senior is paid first from loan repayments. Junior earns more but absorbs losses first.
+        Conservative is paid first from loan repayments (first-loss protected). Aggressive earns a
+        higher risk-priced yield but absorbs losses first — pick your appetite for risk.
       </p>
 
       {(Object.values(TRANCHES) as (typeof TRANCHES)[TrancheId][]).map((t) => (

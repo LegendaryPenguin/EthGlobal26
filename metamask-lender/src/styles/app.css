@@ -223,6 +223,7 @@ button.token-row { cursor: pointer; }
 /* ============ TRANCHE CARDS ============ */
 .tranche-card {
   display: flex; align-items: flex-start; gap: 12px; width: 100%; text-align: left;
+  color: var(--color-text-default); /* theme-aware: readable in both light and dark mode */
   background: var(--color-background-default);
   border: 1px solid var(--color-border-muted);
   border-radius: var(--radius-lg);
