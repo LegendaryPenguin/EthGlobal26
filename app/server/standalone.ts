@@ -7,7 +7,6 @@
 // VITE_ARC_RPC_URL, VITE_WORLD_APP_ID, VITE_WORLD_RP_ID). PORT defaults to 8080.
 import { createServer } from "node:http";
 import { createReadStream, existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -59,15 +58,13 @@ createServer(async (req, res) => {
     return createReadStream(IDKIT_WASM).pipe(res);
   }
 
-  // Static SPA with history-fallback to index.html.
+  // Static SPA with history-fallback to index.html. STREAM files (don't readFile into memory) —
+  // the bb.js barretenberg chunks are ~4MB each; buffering them OOMs small instances (Render free
+  // tier), which manifests as intermittent 404s. Streaming keeps memory flat.
   let file = path.join(DIST, url === "/" ? "index.html" : url.replace(/^\/+/, ""));
   if (!existsSync(file) || !file.startsWith(DIST)) file = path.join(DIST, "index.html");
-  try {
-    const body = await readFile(file);
-    res.setHeader("Content-Type", MIME[path.extname(file)] || "application/octet-stream");
-    res.end(body);
-  } catch {
-    res.statusCode = 404;
-    res.end("not found");
-  }
+  res.setHeader("Content-Type", MIME[path.extname(file)] || "application/octet-stream");
+  const stream = createReadStream(file);
+  stream.on("error", () => { if (!res.headersSent) res.statusCode = 404; res.end("not found"); });
+  stream.pipe(res);
 }).listen(PORT, () => console.log(`Vouch borrower app (SPA + World ID API) on :${PORT}`));
