@@ -34,6 +34,80 @@ function Hashed({ label, value, isTx }: { label: string; value?: string; isTx?: 
   );
 }
 
+/// The demo money-shot: makes the in-browser Noir/UltraHonk proof *visible*. Shows what stayed
+/// private (income) vs the only values shared (public inputs — no income), the real proof artifact,
+/// a live "✓ Verified", and a "Try to forge it" button that tampers a byte and gets rejected.
+function ZkProofPanel({ zk }: { zk: ReturnType<typeof useProveEligibility> }) {
+  const p = zk.proof;
+  if (!p) return null;
+  const proofBytes = Math.round((p.proofHex.length - 2) / 2);
+  const proofKb = (proofBytes / 1024).toFixed(1);
+  const v = zk.verdict;
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <span className="zk-badge">Real ZK proof · UltraHonk · generated in {p.ms} ms</span>
+
+      <div className="zk-split">
+        <div className="zk-col zk-col--private">
+          <div className="zk-col__head">🔒 Private — stayed on your device</div>
+          <ul className="zk-list">
+            <li>Monthly income: <code>•••••</code> <span className="muted">(never sent)</span></li>
+            <li>Income blinding: <code>•••••</code></li>
+            <li>Borrower secret: <code>•••••</code></li>
+          </ul>
+          <p className="muted zk-note">None of these are public inputs or network payloads.</p>
+        </div>
+        <div className="zk-col zk-col--public">
+          <div className="zk-col__head">🌐 Public — the only values shared</div>
+          <ul className="zk-list">
+            <li>Threshold: <code>{p.inputs.threshold}</code></li>
+            <li>Default-list root: <code>{short(p.inputs.defaultListRoot)}</code></li>
+            <li>Income commitment: <code>{short(p.inputs.incomeCommitment)}</code></li>
+            <li>Nullifier: <code>{short(p.inputs.nullifier)}</code></li>
+          </ul>
+          <p className="muted zk-note">Notice: there is no income figure here.</p>
+        </div>
+      </div>
+
+      <div className="zk-proof">
+        <span className="muted">Proof artifact</span>{" "}
+        <strong>{proofKb} KB</strong> <span className="muted">·</span>{" "}
+        <code>{p.proofHex.slice(0, 22)}…{p.proofHex.slice(-12)}</code>
+      </div>
+
+      <div className="zk-actions">
+        <button
+          className="btn"
+          onClick={() => { void zk.verify(); }}
+          disabled={v.kind === "verifying"}
+        >
+          {v.kind === "verifying" ? "Verifying…" : "Verify proof"}
+        </button>
+        <button
+          className="btn btn--danger"
+          onClick={() => { void zk.forge(); }}
+          disabled={v.kind === "verifying"}
+        >
+          Try to forge it
+        </button>
+      </div>
+
+      {v.kind === "valid" && (
+        <p className="zk-verdict zk-verdict--ok">✓ Verified — the verifier accepts this proof.</p>
+      )}
+      {v.kind === "rejected" && (
+        <p className="zk-verdict zk-verdict--bad">
+          {v.forged
+            ? "✗ Rejected — one tampered byte and the proof is worthless. It's unforgeable."
+            : "✗ Rejected."}
+        </p>
+      )}
+      {v.kind === "error" && <p className="error">{v.message}</p>}
+    </div>
+  );
+}
+
 /// Identity-first borrow flow: Sign in with World ID (a *session* — repeatable, no re-verify wall).
 /// The server identifies the human, provisions a custodial wallet for them, mints/loads the passport,
 /// and signs the claim — so a new borrower onboards by scanning, no MetaMask needed.
@@ -183,13 +257,15 @@ export function BorrowFlow() {
         >
           {zk.status === "proving" ? "Proving in your browser…" : proven ? "Eligibility proven ✓" : "Prove eligibility"}
         </button>
-        {proven && zk.proof && (
+        {zk.status === "proving" && (
           <p className="muted" style={{ marginTop: 8 }}>
-            Proof generated in {zk.proof.ms} ms · income never left your device. Public inputs carry
-            only the threshold, default-list root, income commitment, and nullifier.
+            Running the Noir circuit through the UltraHonk prover in a WASM worker… this is real
+            cryptography, it takes a few seconds.
           </p>
         )}
         {zk.status === "error" && zk.error && <p className="error">{zk.error}</p>}
+
+        {proven && zk.proof && <ZkProofPanel zk={zk} />}
       </div>
 
       {/* Step 2 — sign in, gated on the proof. */}
