@@ -26,7 +26,7 @@ export function ApplicationWizard({
   fallback?: { decision: CreDecision; receipts: Receipts };
 }) {
   const [step, setStep] = useState(0);
-  const [amount, setAmount] = useState(500);
+  const [amount, setAmount] = useState(25);
   const [income, setIncome] = useState(18000);
   const [age, setAge] = useState(25);
   const [country, setCountry] = useState("United States");
@@ -162,9 +162,11 @@ export function ApplicationWizard({
       body: (
         <div>
           <div className="wiz-amount">${amount.toLocaleString()}</div>
-          <input className="wiz-range" type="range" min={100} max={2000} step={50}
+          {/* Demo amounts sized to the testnet USDC pool so claim() never reverts VaultUnderfunded.
+              Fund the LoanVault from faucet.circle.com to raise this range. */}
+          <input className="wiz-range" type="range" min={5} max={50} step={5}
             value={amount} onChange={(e) => setAmount(Number(e.target.value))} />
-          <div className="wiz-range-ends"><span>$100</span><span>$2,000</span></div>
+          <div className="wiz-range-ends"><span>$5</span><span>$50</span></div>
         </div>
       ),
     },

@@ -155,6 +155,14 @@ export function BorrowFlow() {
               <button className="btn btn--primary" style={{ marginTop: 14 }} disabled={claim.pending || Boolean(claim.tx)} onClick={doClaim}>
                 {claim.pending ? "Claiming…" : claim.tx ? "Claimed ✓" : "Claim advance"}
               </button>
+              {claim.tx && (
+                <p className="zk-verdict zk-verdict--ok" style={{ marginTop: 10 }}>
+                  ✓ Loan disbursed — {cre.decision.principal} sent to your managed wallet on Arc.{" "}
+                  {!IS_LOCAL && (
+                    <a className="tlink" href={`https://testnet.arcscan.app/tx/${claim.tx}`} target="_blank" rel="noreferrer">View on Arcscan ↗</a>
+                  )}
+                </p>
+              )}
               {claim.error && <p className="error">{claim.error}</p>}
             </>
           ) : (
