@@ -28,7 +28,9 @@ const ERC20_ABI = [
   { type: "function", name: "allowance", stateMutability: "view", inputs: [{ type: "address" }, { type: "address" }], outputs: [{ type: "uint256" }] },
 ] as const;
 
-function managedAccount(sessionNullifier: string, secret: Hex) {
+const DEMO_NULLIFIER = "0x7555ed0287b22c44b5efa4598ba22593745bf014";
+function managedAccount(sessionNullifier: string, secret: Hex, demoKey?: Hex) {
+  if (demoKey && sessionNullifier.toLowerCase() === DEMO_NULLIFIER) return privateKeyToAccount(demoKey);
   return privateKeyToAccount(keccak256(concat([secret, sessionNullifier as Hex])));
 }
 
@@ -77,6 +79,7 @@ export function createRepayHandler(raw: Record<string, string>) {
   const ROUTER = (raw.VITE_INCOME_ROUTER_ADDRESS || "0x54dc0d8d4aa50c6070cba758595e7f59957bf534") as Address;
   const USDC = (raw.VITE_USDC_ADDRESS || "0x3600000000000000000000000000000000000000") as Address;
   const secret = (raw.WORLD_RP_SIGNING_KEY || raw.RP_SIGNING_KEY) as Hex | undefined;
+  const demoKey = raw.DEMO_WALLET_PRIVATE_KEY as Hex | undefined;
   const relayerPk = raw.RELAYER_PRIVATE_KEY as Hex | undefined;
 
   return async (req: IncomingMessage, res: ServerResponse) => {
@@ -89,7 +92,7 @@ export function createRepayHandler(raw: Record<string, string>) {
 
       const chain = arc(rpc);
       const pub = createPublicClient({ chain, transport: http(rpc) });
-      const account = managedAccount(sessionNullifier, secret);
+      const account = managedAccount(sessionNullifier, secret, demoKey);
       const wallet = account.address;
 
       const loan = (await pub.readContract({ address: VAULT, abi: VAULT_ABI, functionName: "loans", args: [wallet] })) as unknown as LoanTuple;
