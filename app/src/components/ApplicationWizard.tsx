@@ -13,9 +13,13 @@ type Receipts = { setTermsTx?: string; attestationRef?: string };
 export function ApplicationWizard({
   sessionNullifier,
   onDecided,
+  fallback,
 }: {
   sessionNullifier: string;
   onDecided: (d: CreDecision, receipts: Receipts) => void;
+  // If the CRE (/trigger) is unavailable, complete with these instant pre-approved terms so the
+  // demo isn't blocked by an external dependency. The CRE path is preferred when it's up.
+  fallback?: { decision: CreDecision; receipts: Receipts };
 }) {
   const [step, setStep] = useState(0);
   const [amount, setAmount] = useState(500);
@@ -62,6 +66,12 @@ export function ApplicationWizard({
       setId(r.id);
       setPhase("underwriting");
     } catch (e) {
+      // CRE unavailable (e.g. /trigger empty). Don't dead-end the demo — fall back to instant terms.
+      if (fallback) {
+        logEvent({ kind: "info", label: "CRE unavailable — approved on instant terms" });
+        onDecided(fallback.decision, fallback.receipts);
+        return;
+      }
       setError(e instanceof Error ? e.message : String(e));
       setPhase("error");
     }
