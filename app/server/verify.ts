@@ -233,10 +233,12 @@ export function createApplyHandler(raw: Record<string, string>) {
         requestedPrincipal: b.requestedPrincipal || "500 USDC",
         walletAddresses: [wallet],
         identity: {
-          // Income is NEVER sent — the ZK proof attests income >= threshold privately. The TEE/CRE
-          // underwrites on that verdict + the non-income signals below.
+          // Exact income is NEVER sent — the ZK proof attests income >= threshold privately. We pass only
+          // the VERIFIED FLOOR (the public policy threshold the proof cleared) so the underwriter can size
+          // capacity against a conservative lower bound without ever seeing the real number.
           world_id_nullifier: b.sessionNullifier, zk_eligibility_proof_valid: true,
           age: b.age, country: b.country || "US", occupation: b.occupation || "",
+          zk_income_floor_usd: 12000, // = POLICY_THRESHOLD (yearly). Proof attests income >= this.
         },
       });
       console.log(`[cre] application submitted → inference ${id} (${status})`);
