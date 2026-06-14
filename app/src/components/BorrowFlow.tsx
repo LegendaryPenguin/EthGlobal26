@@ -228,7 +228,14 @@ export function BorrowFlow() {
           <strong>Your advance</strong>
           {!cre ? (
             // Apply through the Chainlink CRE / Confidential AI — the real underwriting path.
-            <ApplicationWizard sessionNullifier={me.sessionNullifier} onDecided={(decision, receipts) => setCre({ decision, receipts })} />
+            <ApplicationWizard
+              sessionNullifier={me.sessionNullifier}
+              onDecided={(decision, receipts) => setCre({ decision, receipts })}
+              fallback={me.terms.approved ? {
+                decision: { approved: true, principal: `${formatUnits(BigInt(me.terms.principal), 6)} USDC`, tranche: "Senior", riskBand: "B", denialReason: "", transcriptHash: me.receipts?.attestationRef ?? "0x0", inferenceId: "instant" },
+                receipts: { setTermsTx: me.receipts?.setTermsTx, attestationRef: me.receipts?.attestationRef },
+              } : undefined}
+            />
           ) : cre.decision.approved ? (
             <>
               <table className="terms">
