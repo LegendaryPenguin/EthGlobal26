@@ -38,6 +38,13 @@ const VAULT_ABI = [{ type: "function", name: "claim", stateMutability: "nonpayab
 
 const WORLD_API = (base?: string) => base || "https://developer.worldcoin.org";
 
+/// The ZK eligibility proof is always GENERATED in the browser and shown in the proof receipt.
+/// This controls only the server-side RE-verification, which needs bb.js wasm — it can't run on
+/// Vercel serverless (VERCEL=1), so we skip it there (and when explicitly disabled for tests).
+/// Local dev / standalone server runs the full gate.
+const zkGateDisabled = (raw: Record<string, string>) =>
+  raw.ZK_GATE_DISABLED === "1" || raw.VERCEL === "1";
+
 interface Env {
   APP_ID?: `app_${string}`;
   RP_ID?: string;
@@ -111,8 +118,8 @@ export function createSigninHandler(raw: Record<string, string>) {
       // 0. ZK GATE (the privacy gate before underwriting): the borrower must present a valid
       //    in-browser eligibility proof (income >= threshold AND not on the default list) whose
       //    income figure never left their device. Verify it + re-bind policy BEFORE any underwriting.
-      //    Set ZK_GATE_DISABLED=1 to bypass (tests / no-circuit envs).
-      if (raw.ZK_GATE_DISABLED !== "1") {
+      //    Skipped on Vercel serverless (bb.js wasm can't run) or when ZK_GATE_DISABLED=1.
+      if (!zkGateDisabled(raw)) {
         if (!eligibility) {
           return json(res, 403, { ok: false, error: "eligibility_proof_required", detail: "Generate the in-browser eligibility proof before signing in." });
         }
@@ -217,12 +224,17 @@ export function createApplyHandler(raw: Record<string, string>) {
 
       // ZK GATE: verify the in-browser eligibility proof (income >= threshold AND not on the default
       // list) BEFORE underwriting. Income is NOT in this request — only { proofHex, publicInputs }.
-      if (!b.eligibility) {
-        return json(res, 403, { ok: false, error: "eligibility_proof_required", detail: "Generate the in-browser eligibility proof first." });
+      // The proof is still GENERATED and shown in the on-device proof receipt regardless; this is the
+      // server-side RE-verification, which needs bb.js wasm and can't run on Vercel serverless. So we
+      // skip it on Vercel (VERCEL=1) or when explicitly disabled. Local dev runs the full gate.
+      if (!zkGateDisabled(raw)) {
+        if (!b.eligibility) {
+          return json(res, 403, { ok: false, error: "eligibility_proof_required", detail: "Generate the in-browser eligibility proof first." });
+        }
+        const gate = await verifyEligibility(b.eligibility, { enforceReplay: raw.ZK_ENFORCE_NULLIFIER_REPLAY === "1" });
+        if (!gate.ok) return json(res, 403, { ok: false, error: "eligibility_denied", detail: gate.reason });
+        console.log("[zk] /apply eligibility gate passed; nullifier", gate.nullifier);
       }
-      const gate = await verifyEligibility(b.eligibility, { enforceReplay: raw.ZK_ENFORCE_NULLIFIER_REPLAY === "1" });
-      if (!gate.ok) return json(res, 403, { ok: false, error: "eligibility_denied", detail: gate.reason });
-      console.log("[zk] /apply eligibility gate passed; nullifier", gate.nullifier);
 
       const wallet = managedAccount(b.sessionNullifier, env.RP_SIGNING_KEY).address;
       const { id, status } = await submitApplication({
