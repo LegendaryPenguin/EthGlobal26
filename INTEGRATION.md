@@ -36,9 +36,13 @@ uses). `attestationRef` = the Confidential-AI transcript digest, satisfying the 
 `underwrite()` calls the Confidential AI endpoint when `CONFIDENTIAL_AI_API_URL` is set, else a
 deterministic local policy (band→APR, per-human) so the full flow runs without sandbox creds. The
 `attestationRef` is the verdict digest, satisfying the LoanVault gate.
-> **Remaining (one piece):** in-browser Noir proof generation (`shiva-work` `prove.js`) as the literal
-> ZK gate before approval — left out of the Vite bundle for now (wasm bundling would risk the build);
-> `prove.js` runs the real proof+verify standalone today. Wire it as the pre-`signin` gate next.
+> **DONE (was "remaining"):** in-browser Noir proof generation is now the literal ZK gate before
+> approval. `app/src/hooks/useProveEligibility.ts` generates an UltraHonk proof in the browser (bb.js
+> lazy-chunked into the Vite bundle — it builds), and `app/server/verify.ts` `/signin` verifies it
+> (`verifyEligibility.ts`: real proof check + policy re-bind + nullifier guard) BEFORE `underwrite()`.
+> An on-chain path also ships: `contracts/src/HonkVerifier.sol` + `EligibilityGate.sol` (deploy via
+> `script/DeployEligibility.s.sol`), validated by 5 forge tests with a real proof. See
+> `circuits/ZK-RESEARCH.md` → "STATUS: DONE".
 
 ## On-chain receipts / demo state (Phase 5 — DONE)
 `BorrowFlow.tsx` now shows an **On-chain receipts** panel: passport id, human nullifier,

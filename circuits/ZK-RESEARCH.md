@@ -47,3 +47,51 @@ Keep in lockstep: `nargo` ↔ `@noir-lang/noir_js` ↔ `@aztec/bb.js` ↔ `bb` C
 
 Sources: NoirJS tutorial (noir-lang.org/docs/tutorials/noirjs_app), Barretenberg Solidity-verifier docs,
 Aztec bb-versions compatibility map, aztec-packages#18270.
+
+---
+
+## STATUS: DONE (this branch) — all 5 steps shipped
+
+Toolchain installed + pinned empirically: **nargo 1.0.0-beta.22 ↔ @noir-lang/noir_js 1.0.0-beta.22 ↔
+@aztec/bb.js 5.0.0-nightly.20260522 ↔ bb CLI 5.0.0-nightly.20260522** (`bbup -nv 1.0.0-beta.22`
+resolves the matching `bb`). `nargo test` = 2 pass; `nargo compile` → `target/vouch_eligibility.json`.
+
+| # | Step | Where | Validated |
+|---|---|---|---|
+| 1 | Standalone proof (UltraHonk) | `circuits/prove.js` | `node prove.js` → **Verified: true** (4 public inputs, income absent) |
+| 2 | Backend verify + policy re-bind + replay guard | `app/server/verifyEligibility.ts` | typechecks; wired into the gate |
+| 3 | In-browser proving hook | `app/src/zk/eligibility.ts`, `app/src/hooks/useProveEligibility.ts` | `app` builds; barretenberg+acvm wasm lazy-chunked |
+| 4 | On-chain Groth16/Honk verifier + gate | `contracts/src/HonkVerifier.sol` (bb `-t evm --optimized`), `contracts/src/EligibilityGate.sol`, `script/DeployEligibility.s.sol` | **forge test = 5 pass** (real proof verified on-chain ~1.27M gas; policy re-bind + replay enforced) |
+| 5 | Wire the gate before underwriting | `app/server/verify.ts` `/signin` | verifies the proof BEFORE `underwrite()`; `ZK_GATE_DISABLED=1` to bypass |
+
+### Two bb.js API notes (this nightly differs from the guide)
+- `UltraHonkBackend(bytecode, api)` now **requires** an explicit `api = await Barretenberg.new()`.
+- Solidity/EVM proofs use `generateProof(witness, { verifierTarget: "evm" })` (keccak + ZK); the bb
+  CLI uses `-t evm` (not the old `--oracle_hash keccak`).
+
+### Reproduce (WSL, toolchain on PATH)
+```bash
+cd circuits && nargo compile && node prove.js            # step 1
+# step 4 verifier already generated; regenerate with:
+bb write_vk -b target/vouch_eligibility.json -o target/vk -t evm
+bb write_solidity_verifier -k target/vk/vk -o ../contracts/src/HonkVerifier.sol -t evm --optimized
+node scripts/zk-gen-evmproof.mjs                          # writes contracts/test/fixtures
+cd ../contracts && forge test --match-path test/EligibilityGate.t.sol
+cd ../app && npm run build && npm test
+```
+
+### Demo deploy (your step — needs faucet)
+On-chain verify is the only piece needing a deploy. Fund the deployer with **testnet USDC at
+https://faucet.circle.com** (Arc pays gas in USDC), then:
+```bash
+cd contracts && forge script script/DeployEligibility.s.sol:DeployEligibility \
+  --rpc-url $ARC_RPC_URL --private-key $DEPLOYER_PRIVATE_KEY --broadcast --slow
+```
+
+### Known simplifications (demo-fine; flagged)
+- In-browser proof uses the canonical income **credential** (fixed witness). Income is still a
+  PRIVATE witness — never public, never sent to the server. Per-borrower commitments need a signed
+  credential + in-browser pedersen (`Fr`/sync-pedersen aren't exported in this bb.js nightly).
+  Because the demo nullifier is shared, the server-side replay guard is **off by default**
+  (`ZK_ENFORCE_NULLIFIER_REPLAY=1` to enable); the on-chain gate enforces it unconditionally.
+- Circuit soundness TODOs (unsigned commitment; low-64-bit gap) remain — see `src/main.nr`.
