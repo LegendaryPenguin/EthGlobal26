@@ -3,13 +3,20 @@ src = "src"
 out = "out"
 libs = ["lib"]
 test = "test"
-solc = "0.8.24"
+# Bumped 0.8.24 -> 0.8.28: the bb-generated HonkVerifier.sol (Track D on-chain verifier) requires
+# ^0.8.27. All other contracts are ^0.8.24 and compile cleanly under 0.8.28.
+solc = "0.8.28"
 optimizer = true
+# 200 runs: keeps the large Honk verifier within the contract size limit (per circuits/ZK-RESEARCH.md).
 optimizer_runs = 200
 evm_version = "cancun"
 # Allow the local devnet setup script (script/SetupLocal.s.sol) to write the frontend's app/.env.
 # Scoped to ../app only — never broadens write access beyond the frontend env file.
-fs_permissions = [{ access = "read-write", path = "../app" }]
+fs_permissions = [
+    { access = "read-write", path = "../app" },
+    # Read-only: the EligibilityGate test loads a real proof fixture (Track-D on-chain verify).
+    { access = "read", path = "./test/fixtures" },
+]
 
 # Arc Testnet (Circle's L1) — TESTNET ONLY, chain id 5042002 (Golden Rule #3).
 # Never target mainnet. Fund the deployer at https://faucet.circle.com (choose Arc Testnet).

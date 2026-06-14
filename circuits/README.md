@@ -50,8 +50,12 @@ the sorted default list (Merkle sorted-neighbour non-membership).
 
 ## Toolchain status
 
-> **`nargo` is NOT installed in this workspace.** These files were scaffolded to compile once the
-> Noir toolchain is added; nothing below was executed here. Steps that need a toolchain are marked.
+> **DONE — toolchain installed and the full Track-D path is shipped + validated.** Pinned:
+> `nargo 1.0.0-beta.22` + `bb 5.0.0-nightly.20260522` (UltraHonk, not ProveKit — see `ZK-RESEARCH.md`
+> for why and for the end-to-end status table). `node prove.js` → **Verified: true**; the on-chain
+> `HonkVerifier` + `EligibilityGate` pass **5 forge tests** with a real proof. The in-browser gate is
+> wired in `app/` (`useProveEligibility` → `/signin` verifies before underwriting). Install steps below
+> are kept for reproducibility.
 
 ### Install (REQUIRES INSTALL) — Noir toolchain
 ```bash

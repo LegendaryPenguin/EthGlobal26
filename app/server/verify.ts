@@ -19,6 +19,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { underwrite } from "./underwrite.js";
+import { verifyEligibility, type ProofSubmission } from "./verifyEligibility.js";
 
 const PASSPORT_ABI = [
   { type: "function", name: "verifyAndMint", stateMutability: "nonpayable", inputs: [{ name: "signal", type: "address" }, { name: "root", type: "uint256" }, { name: "nullifierHash", type: "uint256" }, { name: "proof", type: "uint256[8]" }], outputs: [] },
@@ -100,15 +101,29 @@ export function createSigninHandler(raw: Record<string, string>) {
       if (!env.RP_ID || !env.RP_SIGNING_KEY || !env.RELAYER_PK || !env.PASSPORT || !env.REGISTRY) {
         return json(res, 500, { ok: false, error: "server not fully configured" });
       }
-      const { result } = (await readJson(req)) as { result?: Record<string, unknown> };
+      const { result, eligibility } = (await readJson(req)) as {
+        result?: Record<string, unknown>;
+        eligibility?: ProofSubmission;
+      };
       if (!result) return json(res, 400, { ok: false, error: "missing session result" });
 
-      // World ID SESSION: the proof is delivered through the authenticated World App bridge (bound to
-      // our signed rp_context nonce), so the repeatable session_nullifier is trusted here. We do NOT
-      // call /api/v4/verify — that endpoint is for one-time uniqueness/action proofs and rejects a
-      // session with "action is required". Uniqueness/anti-respawn is enforced ON-CHAIN (one passport
-      // per session_nullifier). HARDENING TODO (prod): verify the session Groth16 proof via
-      // WorldIDVerifier.sol on-chain; getSessionCommitment(session_id) can also bind the commitment.
+      // 0. ZK GATE (the privacy gate before underwriting): the borrower must present a valid
+      //    in-browser eligibility proof (income >= threshold AND not on the default list) whose
+      //    income figure never left their device. Verify it + re-bind policy BEFORE any underwriting.
+      //    Set ZK_GATE_DISABLED=1 to bypass (tests / no-circuit envs).
+      if (raw.ZK_GATE_DISABLED !== "1") {
+        if (!eligibility) {
+          return json(res, 403, { ok: false, error: "eligibility_proof_required", detail: "Generate the in-browser eligibility proof before signing in." });
+        }
+        const gate = await verifyEligibility(eligibility, { enforceReplay: raw.ZK_ENFORCE_NULLIFIER_REPLAY === "1" });
+        if (!gate.ok) return json(res, 403, { ok: false, error: "eligibility_denied", detail: gate.reason });
+        console.log("[zk] eligibility gate passed; nullifier", gate.nullifier);
+      }
+
+      // 1. World ID SESSION: repeatable, validated via the authenticated World App bridge — NOT
+      //    /api/v4/verify (that endpoint is for one-time uniqueness/action proofs and rejects a
+      //    session with "action is required"). Uniqueness/anti-respawn is enforced ON-CHAIN
+      //    (one passport per session_nullifier).
       const sessionId = (result as { session_id?: string }).session_id;
       const responses = (result.responses as Array<{ session_nullifier?: string[] }>) ?? [];
       const sessionNullifier = responses[0]?.session_nullifier?.[0];
