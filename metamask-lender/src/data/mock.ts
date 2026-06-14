@@ -99,7 +99,7 @@ export const PORTFOLIO_ROWS: PortfolioRow[] = [
 export const VOUCH = {
   name: "Veritas — Credit Passport",
   asset: "USDC" as TokenSymbol,
-  apyRange: "6% – 26% APY",
+  apyRange: "6% – 14% APY",
   tag: "Credit Passport · real-income-backed",
   utilization: "Pool utilization 72% · TVL $4.2M",
   subtext: "Yield from undercollateralized loans to verified humans.",
@@ -119,21 +119,21 @@ export interface Tranche {
 export const TRANCHES: Record<TrancheId, Tranche> = {
   0: {
     id: 0,
-    name: "Senior",
+    name: "Conservative",
     apy: 0.06,
     apyLabel: "~6% APY",
-    blurb: "First-loss protected · passive · paid before Junior",
+    blurb: "First-loss protected · passive · paid before the aggressive tranche",
     share: "~80% of pool",
-    pill: "Senior · first-loss protected",
+    pill: "Conservative · first-loss protected",
   },
   1: {
     id: 1,
-    name: "Junior",
-    apy: 0.26,
-    apyLabel: "~26% APY",
-    blurb: "Absorbs defaults first · higher risk",
+    name: "Aggressive",
+    apy: 0.14,
+    apyLabel: "~14% APY",
+    blurb: "Higher risk-priced yield · absorbs defaults first",
     share: "~20% of pool",
-    pill: "Junior · absorbs defaults first",
+    pill: "Aggressive · absorbs defaults first",
   },
 };
 
