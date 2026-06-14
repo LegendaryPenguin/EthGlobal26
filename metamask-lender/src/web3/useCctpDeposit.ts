@@ -51,7 +51,9 @@ export function useCctpDeposit() {
     if (!srcChainId || !srcUsdc || srcDomain === undefined) throw new Error(`Unsupported source chain: ${source}`);
 
     const value = parseUnits(amount || "0", 6);
-    const maxFee = value / 500n > 0n ? value / 500n : 1n; // generous fast-transfer fee cap
+    // Fast-transfer fee CAP (actual fee is set by Circle, always <= this). value/500 was too low and
+    // made depositForBurn revert ("likely to fail"); use 1% with a 0.05 USDC floor so fast always clears.
+    const maxFee = value / 100n > 50_000n ? value / 100n : 50_000n;
 
     // --- Leg 1: burn on source ---
     await switchChainAsync({ chainId: srcChainId });
