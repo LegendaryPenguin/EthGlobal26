@@ -12,6 +12,7 @@ import { validateIdentity } from "./modules/identity"
 import { getWalletScore } from "./modules/wallet-score"
 import { assessAndClassify } from "./modules/attest"
 import { processInferenceCallback } from "./modules/settle"
+import { decodeHttpBody } from "./modules/http"
 
 // ---------------------------------------------------------------------------
 // Handler 1 — HTTP Trigger: Loan Application Pipeline
@@ -25,17 +26,7 @@ const onLoanApplication = (
   triggerEvent: HTTPPayload,
 ): string => {
   // --- Parse & validate inbound request ---
-  let rawBody = ""
-  const inputObj = (triggerEvent as any).input
-  if (inputObj && Array.isArray(inputObj.data)) {
-    rawBody = new TextDecoder().decode(new Uint8Array(inputObj.data))
-  } else if (inputObj instanceof Uint8Array) {
-    rawBody = new TextDecoder().decode(inputObj)
-  } else if (typeof inputObj === "string") {
-    rawBody = inputObj
-  } else {
-    rawBody = JSON.stringify((triggerEvent as any).body ?? triggerEvent)
-  }
+  const rawBody = decodeHttpBody(triggerEvent)
 
   let body: any = {}
   try {
@@ -64,7 +55,7 @@ const onLoanApplication = (
   // --- 3. Confidential AI inference request (TEE) ---
   let resultStr = ""
   try {
-    resultStr = assessAndClassify(runtime, walletProfile, req.encrypted_identity_blob, req.borrower_wallet)
+    resultStr = assessAndClassify(runtime, walletProfile, req.encrypted_identity_blob, req.borrower_wallet, req.requested_principal)
   } catch (e) {
     runtime.log(`AI classification failed: ${String(e)}`)
     return JSON.stringify({ error: "ai_classification_failed", detail: String(e) })
@@ -83,17 +74,7 @@ const unifiedHttpRouter = (
   runtime: Runtime<Config>,
   triggerEvent: HTTPPayload,
 ): string => {
-  let rawBody = ""
-  const inputObj = (triggerEvent as any).input
-  if (inputObj && Array.isArray(inputObj.data)) {
-    rawBody = new TextDecoder().decode(new Uint8Array(inputObj.data))
-  } else if (inputObj instanceof Uint8Array) {
-    rawBody = new TextDecoder().decode(inputObj)
-  } else if (typeof inputObj === "string") {
-    rawBody = inputObj
-  } else {
-    rawBody = JSON.stringify((triggerEvent as any).body ?? triggerEvent)
-  }
+  const rawBody = decodeHttpBody(triggerEvent)
 
   let body: any = {}
   try {

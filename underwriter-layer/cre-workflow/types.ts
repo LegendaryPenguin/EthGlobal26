@@ -6,6 +6,7 @@ import { z } from "zod"
 
 export const loanRequestSchema = z.object({
   borrower_wallet: z.string(),
+  requested_principal: z.string(), // e.g., "5000 USDC"
   wallet_addresses: z.array(z.string()).min(1),
   encrypted_identity_blob: z.string(),
 })
@@ -27,9 +28,14 @@ export type WalletProfile = {
 
 export const creditDecisionSchema = z.object({
   approved: z.boolean(),
-  principal: z.string(),   // e.g. "500 USDC"
-  tranche: z.string(),     // "Senior" | "Junior"
-  riskBand: z.string(),    // "A" | "B" | "C" | "D"
+  // On denial the model frequently returns null for these; allow it and
+  // coerce to "" at settle time (the on-chain fields are non-nullable strings).
+  principal: z.string().nullable().optional(),   // e.g. "500 USDC"
+  tranche: z.string().nullable().optional(),     // "Senior" | "Junior"
+  riskBand: z.string().nullable().optional(),    // "A" | "B" | "C" | "D"
+  // Short, generic explanation when denied; null when approved.
+  // Must never contain confidential/identifying data.
+  denialReason: z.string().nullable().optional(),
 })
 
 export type CreditDecision = z.infer<typeof creditDecisionSchema>

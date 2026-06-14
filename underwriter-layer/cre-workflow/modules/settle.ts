@@ -13,37 +13,30 @@ import {
   stringToHex,
   toHex,
 } from "viem"
-import type { Config, InferenceCallback, CreditDecision } from "../types"
+import type { Config, InferenceCallback } from "../types"
 import { creditDecisionSchema } from "../types"
+import { decodeHttpBody } from "./http"
+import { deriveIntegrityTag } from "./integrity"
 
-const REPORT_ABI = "address borrower, bool approved, string principal, string tranche, string riskBand, bytes32 transcriptHash, string inferenceId"
+const REPORT_ABI = "address borrower, bool approved, string principal, string tranche, string riskBand, string denialReason, bytes32 transcriptHash, string inferenceId"
 
 /**
  * Handles the async callback from the Confidential AI endpoint.
  *
  * Security layers:
- *  1. Verifies the callback by polling GET /v1/inference/:id with our API key
- *  2. Validates output digest integrity
- *  3. Only writes on-chain after both checks pass
+ *  1. Integrity — re-fetches the inference from GET /v1/inference/:id with our
+ *     API key and requires the callback's output to match the API's output.
+ *  2. Decision — parses & schema-validates the AI's JSON from the VERIFIED output.
+ *  3. Authenticity — re-derives the integrity tag from WORKFLOW_HMAC_SECRET and
+ *     requires it to match the tag embedded in the verified prompt, proving the
+ *     inference was authored by this workflow (not self-submitted by an attacker).
+ *  4. Settlement — ABI-encodes and writes on-chain only after all checks pass.
  */
 export function processInferenceCallback(
   runtime: Runtime<Config>,
   triggerEvent: HTTPPayload,
 ): string {
-  // Decode HTTP body
-  let rawBody = ""
-  const inputObj = (triggerEvent as any).input
-  if (inputObj && Array.isArray(inputObj.data)) {
-    rawBody = new TextDecoder().decode(new Uint8Array(inputObj.data))
-  } else if (inputObj instanceof Uint8Array) {
-    rawBody = new TextDecoder().decode(inputObj)
-  } else if (typeof inputObj === "string") {
-    rawBody = inputObj
-  } else {
-    rawBody = JSON.stringify((triggerEvent as any).body ?? triggerEvent)
-  }
-
-  const callback = JSON.parse(rawBody) as InferenceCallback
+  const callback = JSON.parse(decodeHttpBody(triggerEvent)) as InferenceCallback
 
   runtime.log(
     `Inference callback received: id=${callback.id ?? "unknown"} status=${callback.status ?? "unknown"}`,
@@ -68,7 +61,7 @@ export function processInferenceCallback(
 
   const httpClient = new HTTPClient()
 
-  const verifyCallback = (sendRequester: any): { verified: boolean; output: string; prompt: string } => {
+  const verifyCallback = (sendRequester: any): { verified: boolean; output: string; prompt: string; responseDigest: string } => {
     const verifyResp = sendRequester.sendRequest({
       url: `${runtime.config.confAiBaseUrl}/v1/inference/${callback.id}`,
       method: "GET",
@@ -97,6 +90,9 @@ export function processInferenceCallback(
       verified: true,
       output: verifiedJson.output,
       prompt: verifiedJson.prompt ?? "",
+      // Enclave-produced digest taken from the VERIFIED API response, not the
+      // untrusted callback body.
+      responseDigest: verifiedJson.resources?.[0]?.response_digest ?? "",
     }
   }
 
@@ -106,6 +102,7 @@ export function processInferenceCallback(
       verified: { method: "identical" },
       output: { method: "identical" },
       prompt: { method: "identical" },
+      responseDigest: { method: "identical" },
     },
   } as any
 
@@ -131,42 +128,68 @@ export function processInferenceCallback(
   }
   const decision = parsed.data
 
-  runtime.log(`Decision: approved=${decision.approved}, riskBand=${decision.riskBand}, principal=${decision.principal}`)
+  // The model nulls these out on denial; the on-chain report needs strings.
+  const principal = decision.principal ?? ""
+  const tranche = decision.tranche ?? ""
+  const riskBand = decision.riskBand ?? ""
+  // Denial reason is only meaningful for rejections; force it empty when approved.
+  const denialReason = decision.approved ? "" : (decision.denialReason ?? "")
+
+  runtime.log(`Decision: approved=${decision.approved}, riskBand=${riskBand}, principal=${principal}`)
 
   // -----------------------------------------------------------------------
   // Compute transcript hash for on-chain verifiability
   // -----------------------------------------------------------------------
-
-  const responseDigest = callback.resources?.[0]?.response_digest
-  const transcriptHash = responseDigest
-    ? (`0x${responseDigest.replace(/^0[xX]/, "").toLowerCase()}` as `0x${string}`)
-    : sha256(stringToHex(output))
+  // Derived entirely from VERIFIED data: prefer the enclave's response digest
+  // returned by the API, falling back to a SHA-256 of the verified output.
+  const transcriptHash = verified.responseDigest
+    ? (`0x${verified.responseDigest.replace(/^0[xX]/, "").toLowerCase()}` as `0x${string}`)
+    : sha256(stringToHex(verified.output))
 
   const inferenceId = callback.id
 
   // -----------------------------------------------------------------------
-  // Extract borrower wallet from the verified prompt
+  // Extract borrower wallet from the verified prompt (fail closed)
   // -----------------------------------------------------------------------
-  // The prompt text from Trigger 0 includes the borrower wallet. Since we
-  // verified this prompt against the API (not trusting the callback), this
-  // is a trustworthy source for the borrower address.
+  // The prompt is fetched from the attester API, so it is a trustworthy source
+  // for the borrower address. If we cannot resolve it, we refuse to write
+  // rather than attributing the decision to a fallback address.
   const borrowerMatch = verified.prompt.match(/Borrower wallet: (0x[a-fA-F0-9]{40})/)
-  const borrower = borrowerMatch
-    ? getAddress(borrowerMatch[1] as `0x${string}`)
-    : getAddress(runtime.config.consumerAddress) // fallback for testing
-
-  runtime.log(`Borrower resolved: ${borrower}`)
+  if (!borrowerMatch) {
+    throw new Error("Could not resolve borrower from verified prompt — refusing to settle")
+  }
+  const borrower = getAddress(borrowerMatch[1] as `0x${string}`)
 
   // -----------------------------------------------------------------------
-  // Layer 3: ABI-encode and write on-chain
+  // Layer 3: Workflow authenticity — verify the integrity tag
+  // -----------------------------------------------------------------------
+  // The verified prompt carries a tag = sha256(secret | borrower). An attacker
+  // who self-submitted an inference with their own API key cannot forge this
+  // tag without WORKFLOW_HMAC_SECRET, so a passing check proves the prompt was
+  // authored by THIS workflow — not merely that some completed inference exists.
+  const hmacSecretObj = runtime.getSecret({ id: "WORKFLOW_HMAC_SECRET" } as any).result()
+  const hmacSecret = (hmacSecretObj as any).value || hmacSecretObj
+  if (!hmacSecret) throw new Error("WORKFLOW_HMAC_SECRET secret not found for verification")
+
+  const expectedTag = deriveIntegrityTag(hmacSecret, borrower)
+  const tagMatch = verified.prompt.match(/Workflow integrity tag: (0x[a-fA-F0-9]{64})/)
+  if (!tagMatch || tagMatch[1].toLowerCase() !== expectedTag.toLowerCase()) {
+    throw new Error("Integrity tag mismatch — inference was not authored by this workflow")
+  }
+
+  runtime.log(`Borrower resolved and integrity tag verified: ${borrower}`)
+
+  // -----------------------------------------------------------------------
+  // Layer 4: ABI-encode and write on-chain
   // -----------------------------------------------------------------------
 
   const encodedPayload = encodeAbiParameters(parseAbiParameters(REPORT_ABI), [
     borrower,
     decision.approved,
-    decision.principal,
-    decision.tranche,
-    decision.riskBand,
+    principal,
+    tranche,
+    riskBand,
+    denialReason,
     transcriptHash,
     inferenceId,
   ])
@@ -197,6 +220,7 @@ export function processInferenceCallback(
   return JSON.stringify({
     id: callback.id,
     approved: decision.approved,
+    denialReason: decision.approved ? null : (denialReason || null),
     transcriptHash,
     write
   })

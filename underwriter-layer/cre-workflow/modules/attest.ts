@@ -4,18 +4,25 @@ import {
 } from "@chainlink/cre-sdk"
 import type { Config, WalletProfile } from "../types"
 import { SYSTEM_PROMPT, buildClassificationPrompt } from "../prompts"
+import { deriveIntegrityTag } from "./integrity"
 
 export function assessAndClassify(
   runtime: Runtime<Config>,
   profile: WalletProfile,
   encryptedIdentityBlob: string,
-  borrowerWallet: string
+  borrowerWallet: string,
+  requestedPrincipal: string
 ): string {
   const apiKeySecret = runtime.getSecret({ id: "CONF_AI_API_KEY" } as any)
   const apiKeyObj = apiKeySecret.result()
   const apiKey = (apiKeyObj as any).value || apiKeyObj
   if (!apiKey) throw new Error("CONF_AI_API_KEY secret not found")
-  runtime.log(`API Key loaded, length: ${apiKey.length}, first 4 chars: ${apiKey.substring(0,4)}`)
+
+  // Workflow-held secret used to bind the prompt to THIS workflow (see integrity.ts).
+  const hmacSecretObj = runtime.getSecret({ id: "WORKFLOW_HMAC_SECRET" } as any).result()
+  const hmacSecret = (hmacSecretObj as any).value || hmacSecretObj
+  if (!hmacSecret) throw new Error("WORKFLOW_HMAC_SECRET secret not found")
+  const integrityTag = deriveIntegrityTag(hmacSecret, borrowerWallet)
 
   const baseUrl = runtime.config.confAiBaseUrl
   const httpClient = new HTTPClient()
@@ -25,7 +32,7 @@ export function assessAndClassify(
     const submitReqStr = JSON.stringify({
       model: runtime.config.confAiModel,
       system_prompt: SYSTEM_PROMPT,
-      prompt: buildClassificationPrompt(profile, encryptedIdentityBlob, borrowerWallet),
+      prompt: buildClassificationPrompt(profile, encryptedIdentityBlob, borrowerWallet, requestedPrincipal, integrityTag),
       cre_callback: { url: runtime.config.creCallbackUrl }
     })
     

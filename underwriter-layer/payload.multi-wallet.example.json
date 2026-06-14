@@ -1,5 +1,6 @@
 {
   "borrower_wallet": "0x1234567890abcdef1234567890abcdef12345678",
+  "requested_principal": "5000 USDC",
   "wallet_addresses": [
     "0x1234567890abcdef1234567890abcdef12345678",
     "0x9876543210fedcba9876543210fedcba98765432"

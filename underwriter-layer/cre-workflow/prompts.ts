@@ -7,7 +7,7 @@ export const SYSTEM_PROMPT =
   "on-chain wallet evidence. Never include wallet addresses, nullifiers, or " +
   "identifying information in your response."
 
-export function buildClassificationPrompt(profile: WalletProfile, encryptedIdentityBlob: string, borrowerWallet: string): string {
+export function buildClassificationPrompt(profile: WalletProfile, encryptedIdentityBlob: string, borrowerWallet: string, requestedPrincipal: string, integrityTag: string): string {
   const profileJson = JSON.stringify(
     {
       wallet_count: profile.walletCount,
@@ -18,7 +18,9 @@ export function buildClassificationPrompt(profile: WalletProfile, encryptedIdent
   )
 
   return (
-    `Borrower wallet: ${borrowerWallet}\n\n` +
+    `Borrower wallet: ${borrowerWallet}\n` +
+    `Requested principal: ${requestedPrincipal}\n` +
+    `Workflow integrity tag: ${integrityTag}\n\n` +
     `You have received an encrypted identity blob from the frontend:\n` +
     `${encryptedIdentityBlob}\n\n` +
     `[ENCLAVE INSTRUCTION: In production, you would decrypt this RSA ciphertext using your TEE private key. ` +
@@ -42,13 +44,16 @@ export function buildClassificationPrompt(profile: WalletProfile, encryptedIdent
     `- Stablecoin balances: indicate liquidity and repayment capacity\n` +
     `- Higher risk borrowers go to Junior tranche, lower risk to Senior\n` +
     `- Risk bands: A (lowest risk) through D (highest risk)\n` +
-    `- Principal should be between 100 and 10000 USDC, scaled to income and on-chain evidence\n\n` +
+    `- Evaluate if the "Requested principal" is reasonable based on their capacity. If reasonable, approve it and return the exact requested amount. If too high or unsafe, reject the loan entirely (approved: false).\n` +
+    `- denialReason: when approved is false, give a SHORT (max ~15 words) general explanation of the main risk factor, e.g. "Requested amount exceeds assessed repayment capacity" or "Insufficient on-chain financial history". When approved is true, set it to null.\n` +
+    `  CRITICAL: denialReason MUST NOT reveal any confidential or identifying data — no income figures, age, country, occupation, wallet addresses, balances, or nullifiers. Keep it generic.\n\n` +
     `Respond with ONLY a valid JSON object:\n` +
     `{\n` +
     `  "approved": true,\n` +
-    `  "principal": "500 USDC",\n` +
+    `  "principal": "${requestedPrincipal} USDC",\n` +
     `  "tranche": "Senior|Junior",\n` +
-    `  "riskBand": "A|B|C|D"\n` +
+    `  "riskBand": "A|B|C|D",\n` +
+    `  "denialReason": null\n` +
     `}\n` +
     `Do not include markdown formatting, code fences, or any text outside the JSON object.`
   )
