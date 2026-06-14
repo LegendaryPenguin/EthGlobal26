@@ -97,12 +97,12 @@ export function BorrowFlow() {
     }
   };
 
-  // Demo fallback: signs in with a fresh demo identity (random RP-scoped nullifier, same shape the
-  // action widget returns) so the FULL flow — real ZK proof, passport, CRE, claim — is demoable
-  // without a World App scan. The real World ID scan above remains the primary path.
+  // Demo fallback: a FIXED demo identity (tied to the funded demo wallet server-side, so the loan
+  // lands in that real MetaMask wallet). The full flow — ZK proof, passport, CRE, claim — runs without
+  // a World App scan. The real World ID scan above remains the primary path.
+  const DEMO_NULLIFIER = "0x7555ed0287b22c44b5efa4598ba22593745bf014";
   const demoSignIn = () => {
-    const rand = Array.from(crypto.getRandomValues(new Uint8Array(32))).map((b) => b.toString(16).padStart(2, "0")).join("");
-    const result = { responses: [{ nullifier: `0x${rand}` }] } as unknown as IDKitResult;
+    const result = { responses: [{ nullifier: DEMO_NULLIFIER }] } as unknown as IDKitResult;
     void onSuccess(result);
   };
 

@@ -52,6 +52,7 @@ interface Env {
   ACTION: string; // World action; required for proof-of-human (uniqueness) verification
   RP_SIGNING_KEY?: Hex; // also the managed-wallet derivation secret
   RELAYER_PK?: Hex; // mints/seeds (forwarder = deployer) + funds gas
+  DEMO_WALLET_PK?: Hex; // the demo identity operates as this real wallet (so the loan lands in MetaMask)
   PASSPORT?: Address;
   REGISTRY?: Address;
   VAULT?: Address;
@@ -67,6 +68,7 @@ function readEnv(env: Record<string, string>): Env {
     ACTION: env.VITE_WORLD_ACTION_ID || "mint-credit-passport",
     RP_SIGNING_KEY: env.WORLD_RP_SIGNING_KEY as Hex | undefined,
     RELAYER_PK: env.RELAYER_PRIVATE_KEY as Hex | undefined,
+    DEMO_WALLET_PK: env.DEMO_WALLET_PRIVATE_KEY as Hex | undefined,
     PASSPORT: env.VITE_PASSPORT_REGISTRY_ADDRESS as Address | undefined,
     REGISTRY: env.VITE_LOAN_REGISTRY_ADDRESS as Address | undefined,
     VAULT: env.VITE_LOAN_VAULT_ADDRESS as Address | undefined,
@@ -79,8 +81,14 @@ function readEnv(env: Record<string, string>): Env {
 const arc = (rpc: string) =>
   defineChain({ id: 5042002, name: "Arc Testnet", nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 }, rpcUrls: { default: { http: [rpc] } } });
 
+/// The fixed demo identity (the "Use a demo identity" login). When DEMO_WALLET_PK is set, this human
+/// operates as that real wallet, so the demo loan lands in your actual MetaMask (visible on-chain).
+export const DEMO_NULLIFIER = "0x7555ed0287b22c44b5efa4598ba22593745bf014";
+
 /// Deterministic custodial wallet for a human, derived from their session nullifier + the server secret.
-function managedAccount(sessionNullifier: string, secret: Hex) {
+/// For the demo identity, operate as the configured demo wallet (DEMO_WALLET_PK) instead.
+function managedAccount(sessionNullifier: string, secret: Hex, demoKey?: Hex) {
+  if (demoKey && sessionNullifier.toLowerCase() === DEMO_NULLIFIER) return privateKeyToAccount(demoKey);
   const pk = keccak256(concat([secret, sessionNullifier as Hex]));
   return privateKeyToAccount(pk);
 }
@@ -152,7 +160,7 @@ export function createSigninHandler(raw: Record<string, string>) {
       }
 
       // 2. Provision the human's custodial wallet + relayer mints/seeds on first sight.
-      const wallet = managedAccount(sessionNullifier, env.RP_SIGNING_KEY).address;
+      const wallet = managedAccount(sessionNullifier, env.RP_SIGNING_KEY, env.DEMO_WALLET_PK).address;
       const pub = createPublicClient({ chain: arc(env.RPC), transport: http(env.RPC) });
       const relayer = createWalletClient({ account: privateKeyToAccount(env.RELAYER_PK), chain: arc(env.RPC), transport: http(env.RPC) });
 
@@ -199,7 +207,7 @@ export function createClaimHandler(raw: Record<string, string>) {
       const { sessionNullifier } = (await readJson(req)) as { sessionNullifier?: string };
       if (!sessionNullifier) return json(res, 400, { ok: false, error: "missing sessionNullifier" });
 
-      const account = managedAccount(sessionNullifier, env.RP_SIGNING_KEY);
+      const account = managedAccount(sessionNullifier, env.RP_SIGNING_KEY, env.DEMO_WALLET_PK);
       const pub = createPublicClient({ chain: arc(env.RPC), transport: http(env.RPC) });
       const relayer = createWalletClient({ account: privateKeyToAccount(env.RELAYER_PK), chain: arc(env.RPC), transport: http(env.RPC) });
 
@@ -251,7 +259,7 @@ export function createApplyHandler(raw: Record<string, string>) {
         console.log("[zk] /apply eligibility gate passed; nullifier", gate.nullifier);
       }
 
-      const wallet = managedAccount(b.sessionNullifier, env.RP_SIGNING_KEY).address;
+      const wallet = managedAccount(b.sessionNullifier, env.RP_SIGNING_KEY, env.DEMO_WALLET_PK).address;
       const { id, status } = await submitApplication({
         borrowerWallet: wallet,
         requestedPrincipal: b.requestedPrincipal || "500 USDC",
@@ -305,7 +313,7 @@ export function createDecisionHandler(raw: Record<string, string>) {
       }
 
       // Verdict is in → write it onto Vouch's seam (Arc) so the borrower can claim.
-      const wallet = managedAccount(sessionNullifier, env.RP_SIGNING_KEY).address;
+      const wallet = managedAccount(sessionNullifier, env.RP_SIGNING_KEY, env.DEMO_WALLET_PK).address;
       const pub = createPublicClient({ chain: arc(env.RPC), transport: http(env.RPC) });
       const relayer = createWalletClient({ account: privateKeyToAccount(env.RELAYER_PK), chain: arc(env.RPC), transport: http(env.RPC) });
       const passportId = (await pub.readContract({ address: env.PASSPORT, abi: PASSPORT_ABI, functionName: "passportIdOf", args: [wallet] })) as Hex;
@@ -324,7 +332,7 @@ export function createDecisionHandler(raw: Record<string, string>) {
 
       return json(res, 200, {
         ok: true, decided: true, approved: decision.approved,
-        decision: { principal: decision.principal, tranche: decision.tranche, riskBand: decision.riskBand, denialReason: decision.denialReason, transcriptHash: decision.transcriptHash, inferenceId: decision.inferenceId },
+        decision: { approved: decision.approved, principal: decision.principal, tranche: decision.tranche, riskBand: decision.riskBand, denialReason: decision.denialReason, transcriptHash: decision.transcriptHash, inferenceId: decision.inferenceId },
         receipts: { setTermsTx, attestationRef: decision.transcriptHash },
       });
     } catch (e) {
