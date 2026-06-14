@@ -9,6 +9,9 @@ const APP_ID = import.meta.env.VITE_WORLD_APP_ID as `app_${string}` | undefined;
 const RPC = (import.meta.env.VITE_ARC_RPC_URL as string) || "";
 const IS_LOCAL = /127\.0\.0\.1|localhost/.test(RPC);
 const SESSION_KEY = "vouch.session_id";
+// World ID environment must match where your app_id + RP signing key are registered. Your app shows
+// BOTH Staging and Production active — if the scan fails with "try again", flip VITE_WORLD_ENV.
+const WORLD_ENV = (((import.meta.env.VITE_WORLD_ENV as string) || "production") === "staging" ? "staging" : "production") as "production" | "staging";
 const STANDING = ["Unverified", "Good", "Late", "Defaulted", "Locked out"];
 
 type RpContext = { rp_id: string; nonce: string; created_at: number; expires_at: number; signature: string };
@@ -326,11 +329,12 @@ export function BorrowFlow() {
           open={open}
           onOpenChange={setOpen}
           app_id={APP_ID}
+          environment={WORLD_ENV}
           rp_context={ctx}
           constraints={CredentialRequest("proof_of_human")}
           existing_session_id={savedSid as `session_${string}` | undefined}
           onSuccess={onSuccess}
-          onError={(code) => { setError(String(code)); setStatus("error"); }}
+          onError={(code) => { setError(`World ID error: ${String(code)}`); setStatus("error"); }}
         />
       )}
       {status === "error" && error && <p className="error">{error}</p>}
