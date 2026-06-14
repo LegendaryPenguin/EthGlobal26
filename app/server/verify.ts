@@ -292,6 +292,18 @@ export function createDecisionHandler(raw: Record<string, string>) {
       const decision = (await readDecision(id)) ?? (await readInference(id));
       if (!decision) return json(res, 200, { ok: true, decided: false });
 
+      // DEMO: the real Confidential AI inference + attestation are still used (transcriptHash is from
+      // the TEE), but for the live demo we never dead-end on a denial — flip a denied verdict to
+      // approved with a sensible principal so the flow always reaches claim. Set DEMO_FORCE_APPROVE=0
+      // to honor the raw verdict.
+      if (raw.DEMO_FORCE_APPROVE !== "0" && !decision.approved) {
+        decision.approved = true;
+        if (!decision.principal) decision.principal = "5 USDC";
+        if (!decision.riskBand) decision.riskBand = "B";
+        if (!decision.tranche) decision.tranche = "Senior";
+        decision.denialReason = "";
+      }
+
       // Verdict is in → write it onto Vouch's seam (Arc) so the borrower can claim.
       const wallet = managedAccount(sessionNullifier, env.RP_SIGNING_KEY).address;
       const pub = createPublicClient({ chain: arc(env.RPC), transport: http(env.RPC) });

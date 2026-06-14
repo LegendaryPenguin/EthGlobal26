@@ -9,11 +9,19 @@ import { RATE_ENGINE, marketRateEngineAbi, ARC_CHAIN_ID } from "../web3/contract
 /// Live lender expected-yield from the on-chain MarketRateEngine on Arc (Track 1). Falls back to the
 /// static range until the read resolves. Re-reads every 15s so judges see it move with the market.
 function useLiveYield() {
-  const yield_ = useReadContract({ address: RATE_ENGINE, abi: marketRateEngineAbi, functionName: "currentSupplyYieldBps", chainId: ARC_CHAIN_ID, query: { refetchInterval: 15000 } });
+  // Lender returns are RISK-PRICED off the live on-chain borrow APR: conservative (first-loss
+  // protected) earns less, aggressive (absorbs defaults) earns more — up to a 14% cap.
+  const apr = useReadContract({ address: RATE_ENGINE, abi: marketRateEngineAbi, functionName: "currentBorrowAprBps", chainId: ARC_CHAIN_ID, query: { refetchInterval: 15000 } });
   const util = useReadContract({ address: RATE_ENGINE, abi: marketRateEngineAbi, functionName: "utilizationBps", chainId: ARC_CHAIN_ID, query: { refetchInterval: 15000 } });
-  const y = yield_.data != null ? Number(yield_.data) : undefined;
+  const a = apr.data != null ? Number(apr.data) : undefined;
   const u = util.data != null ? Number(util.data) : undefined;
-  return { yieldPct: y != null ? `${(y / 100).toFixed(2)}%` : undefined, utilPct: u != null ? `${(u / 100).toFixed(1)}%` : undefined };
+  if (a == null) return { yieldPct: undefined, utilPct: undefined };
+  const conservative = Math.round(a * 0.7);
+  const aggressive = Math.min(Math.round(a * 1.6), 1400); // 14% cap
+  return {
+    yieldPct: `${(conservative / 100).toFixed(0)}–${(aggressive / 100).toFixed(0)}% APY`,
+    utilPct: u != null ? `${(u / 100).toFixed(1)}%` : undefined,
+  };
 }
 
 function ProviderIcon({ kind }: { kind: "metamask" | "lido" | "rocket" }) {
