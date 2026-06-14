@@ -109,24 +109,15 @@ export function createSigninHandler(raw: Record<string, string>) {
       if (!env.RP_ID || !env.RP_SIGNING_KEY || !env.RELAYER_PK || !env.PASSPORT || !env.REGISTRY) {
         return json(res, 500, { ok: false, error: "server not fully configured" });
       }
-      const { result, eligibility } = (await readJson(req)) as {
+      const { result } = (await readJson(req)) as {
         result?: Record<string, unknown>;
-        eligibility?: ProofSubmission;
       };
       if (!result) return json(res, 400, { ok: false, error: "missing session result" });
 
-      // 0. ZK GATE (the privacy gate before underwriting): the borrower must present a valid
-      //    in-browser eligibility proof (income >= threshold AND not on the default list) whose
-      //    income figure never left their device. Verify it + re-bind policy BEFORE any underwriting.
-      //    Skipped on Vercel serverless (bb.js wasm can't run) or when ZK_GATE_DISABLED=1.
-      if (!zkGateDisabled(raw)) {
-        if (!eligibility) {
-          return json(res, 403, { ok: false, error: "eligibility_proof_required", detail: "Generate the in-browser eligibility proof before signing in." });
-        }
-        const gate = await verifyEligibility(eligibility, { enforceReplay: raw.ZK_ENFORCE_NULLIFIER_REPLAY === "1" });
-        if (!gate.ok) return json(res, 403, { ok: false, error: "eligibility_denied", detail: gate.reason });
-        console.log("[zk] eligibility gate passed; nullifier", gate.nullifier);
-      }
+      // Sign-in proves PERSONHOOD only: identify the human, provision their wallet, load/mint the
+      // passport. The ZK eligibility gate (income >= threshold AND not on the default list) runs later,
+      // at /apply — over the income the human actually self-reports in the application wizard. Keeping
+      // the gate off sign-in means the order is World ID -> income+questionnaire -> ZK proof.
 
       // 1. World ID SESSION: repeatable, validated via the authenticated World App bridge — NOT
       //    /api/v4/verify (that endpoint is for one-time uniqueness/action proofs and rejects a
