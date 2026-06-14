@@ -2,6 +2,7 @@ import { useState } from "react";
 import { IDKitRequestWidget, proofOfHuman, type IDKitResult } from "@worldcoin/idkit";
 import { formatUnits } from "viem";
 import { ApplicationWizard, type CreDecision, USD_PER_USDC } from "./ApplicationWizard";
+import { WalletLinkPanel } from "./WalletLinkPanel";
 import { logEvent, arcTx } from "../devlog";
 
 const APP_ID = import.meta.env.VITE_WORLD_APP_ID as `app_${string}` | undefined;
@@ -138,6 +139,7 @@ export function BorrowFlow() {
             <li>Defaults: <strong>{p.defaults}</strong></li>
           </ul>
         </div>
+        <WalletLinkPanel sessionNullifier={me.sessionNullifier} />
         <div style={{ marginTop: 16 }}>
           <strong>Your advance</strong>
           {!cre ? (

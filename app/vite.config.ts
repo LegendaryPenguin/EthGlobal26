@@ -5,6 +5,7 @@ import { createReadStream } from "node:fs";
 import path from "node:path";
 import { createSessionContextHandler, createSigninHandler, createClaimHandler, createApplyHandler, createDecisionHandler } from "./server/verify";
 import { createMarketHandler } from "./server/marketEngine";
+import { createLinkWalletHandler } from "./server/walletLink";
 
 const require = createRequire(import.meta.url);
 const IDKIT_WASM = path.join(path.dirname(require.resolve("@worldcoin/idkit-core")), "idkit_wasm_bg.wasm");
@@ -35,6 +36,7 @@ function worldId(env: Record<string, string>): Plugin {
       server.middlewares.use("/api/world/decision", post(createDecisionHandler(env)));
       // GET = read live rates; POST = advance the simulated market + push on-chain. Both handled inside.
       server.middlewares.use("/api/market", createMarketHandler(env));
+      server.middlewares.use("/api/world/link-wallet", post(createLinkWalletHandler(env)));
     },
   };
 }
