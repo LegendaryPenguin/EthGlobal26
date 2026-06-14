@@ -21,3 +21,6 @@ circuits/target/
 
 # typescript build info
 *.tsbuildinfo
+
+# Noir helper build artifacts
+circuits-commit/target/
