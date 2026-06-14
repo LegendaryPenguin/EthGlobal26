@@ -38,6 +38,10 @@ function worldId(env: Record<string, string>): Plugin {
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
+  // Server-side modules (e.g. server/cre.ts) read process.env directly — that's populated on Vercel
+  // but NOT by loadEnv in dev. Mirror the .env files into process.env (without clobbering real ones)
+  // so the same code path runs locally and in prod.
+  for (const [k, v] of Object.entries(env)) if (process.env[k] === undefined) process.env[k] = v;
   return {
     plugins: [react(), worldId(env)],
     // bb.js ships its own wasm + workers. Keep it out of the dep pre-bundler (which mangles the
