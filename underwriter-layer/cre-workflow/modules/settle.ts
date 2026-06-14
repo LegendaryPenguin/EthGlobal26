@@ -194,24 +194,38 @@ export function processInferenceCallback(
     inferenceId,
   ])
 
+  const receiver = runtime.config.consumerAddress
+  const receiverIsUnset = /^0x0{40}$/i.test(receiver)
+  if (receiverIsUnset) {
+    runtime.log(
+      "WARNING: consumerAddress is the zero address — the report will be delivered to a " +
+        "no-op receiver and NOT stored in any CreditRegistry. Set consumerAddress to a deployed registry.",
+    )
+  }
+
   let write: any = { attempted: false }
   try {
     const signedReport = runtime.report(prepareReportRequest(encodedPayload)).result()
 
     const selectors = EVMClient.SUPPORTED_CHAIN_SELECTORS
     const chainSelector = selectors[runtime.config.chainSelectorName as keyof typeof selectors]
-    
+
     // @ts-ignore
     const reply = new EVMClient(chainSelector)
       .writeReport(runtime, {
-        receiver: runtime.config.consumerAddress,
+        receiver,
         report: signedReport,
         gasConfig: { gasLimit: "500000" },
       })
       .result()
 
-    write = { txHash: reply.txHash ? toHex(reply.txHash) : null }
-    runtime.log(`On-chain write successful: txHash=${write.txHash}`)
+    const txHash = reply.txHash ? toHex(reply.txHash) : null
+    write = { txHash, receiver, storedInRegistry: !receiverIsUnset }
+    runtime.log(
+      receiverIsUnset
+        ? `Report submitted to forwarder (txHash=${txHash}) but receiver is unset — not persisted.`
+        : `On-chain write delivered to registry ${receiver}: txHash=${txHash}`,
+    )
   } catch (err) {
     write = { attempted: true, error: String(err) }
     runtime.log(`On-chain write failed: ${write.error}`)

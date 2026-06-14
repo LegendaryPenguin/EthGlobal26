@@ -3,7 +3,7 @@
   "confAiBaseUrl": "https://confidential-ai-dev-preview.cldev.cloud",
   "confAiModel": "gemma4",
   "chainSelectorName": "ethereum-testnet-sepolia",
-  "consumerAddress": "0x0000000000000000000000000000000000000000",
+  "consumerAddress": "0x6Bd85f012fA8d1e66B1f8d7fc5844A5b7B628186",
   "authorizedKeys": [],
   "usdcAddress": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
   "creCallbackUrl": "https://judge-recount-blizzard.ngrok-free.dev/trigger"
