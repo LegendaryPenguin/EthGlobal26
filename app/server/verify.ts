@@ -84,16 +84,16 @@ function managedAccount(sessionNullifier: string, secret: Hex) {
   return privateKeyToAccount(pk);
 }
 
-/// POST /api/world/session-context — signed rp_context for a SESSION request (no action).
+/// POST /api/world/session-context — signed rp_context for the ACTION (proof-of-human) request.
 export function createSessionContextHandler(raw: Record<string, string>) {
   const env = readEnv(raw);
   return async (_req: IncomingMessage, res: ServerResponse) => {
     try {
       if (!env.RP_ID || !env.RP_SIGNING_KEY) return json(res, 500, { ok: false, error: "missing RP config" });
-      // Plain repeatable SESSION (no action, no uniqueness credential): the human proves they're the
-      // same person across visits — no "already verified" wall. Uniqueness/anti-respawn is enforced
-      // ON-CHAIN (PassportRegistry maps each session_nullifier → exactly one passport).
-      const sig = signRequest({ signingKeyHex: env.RP_SIGNING_KEY });
+      // ACTION flow (IDKitRequestWidget): the action MUST be bound into the signed message — non-session
+      // proofs require it, and omitting it makes the World App reject with `invalid_rp_signature`.
+      // Uniqueness/anti-respawn is enforced ON-CHAIN (PassportRegistry maps each nullifier → one passport).
+      const sig = signRequest({ signingKeyHex: env.RP_SIGNING_KEY, action: env.ACTION });
       return json(res, 200, { ok: true, rp_context: { rp_id: env.RP_ID, nonce: sig.nonce, created_at: sig.createdAt, expires_at: sig.expiresAt, signature: sig.sig }, app_id: env.APP_ID });
     } catch (e) {
       return json(res, 500, { ok: false, error: errMsg(e) });
