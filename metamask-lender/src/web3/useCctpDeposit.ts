@@ -55,12 +55,20 @@ export function useCctpDeposit() {
 
     // --- Leg 1: burn on source ---
     await switchChainAsync({ chainId: srcChainId });
+    // CCTP V2 pulls the burn amount via the TokenMessenger's local TokenMinter (it calls
+    // transferFrom), so the USDC allowance must target the MINTER, not the messenger — otherwise
+    // depositForBurn reverts "transfer amount exceeds allowance".
+    const minter = (await readContract(config, {
+      address: TOKEN_MESSENGER_V2,
+      abi: [{ type: "function", name: "localMinter", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] }] as const,
+      functionName: "localMinter", chainId: srcChainId,
+    })) as `0x${string}`;
     const srcAllowance = (await readContract(config, {
-      address: srcUsdc, abi: erc20Abi, functionName: "allowance", args: [address, TOKEN_MESSENGER_V2], chainId: srcChainId,
+      address: srcUsdc, abi: erc20Abi, functionName: "allowance", args: [address, minter], chainId: srcChainId,
     })) as bigint;
     if (srcAllowance < value) {
       const aHash = await writeContractAsync({
-        address: srcUsdc, abi: erc20Abi, functionName: "approve", args: [TOKEN_MESSENGER_V2, value], chainId: srcChainId,
+        address: srcUsdc, abi: erc20Abi, functionName: "approve", args: [minter, value], chainId: srcChainId,
       });
       await waitForTransactionReceipt(config, { hash: aHash, chainId: srcChainId });
     }
