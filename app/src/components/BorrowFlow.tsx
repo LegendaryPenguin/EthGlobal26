@@ -176,6 +176,16 @@ export function BorrowFlow() {
     }
   };
 
+  // Demo fallback: the World App scan is flaky for this RP config, but the server already trusts the
+  // bridge-delivered session_nullifier (no /api/v4/verify). This signs in with a fresh demo identity
+  // (random nullifier) so the FULL flow — real ZK proof, passport, CRE, claim — is demoable today.
+  // The real World ID scan above remains the primary path.
+  const demoSignIn = () => {
+    const rand = Array.from(crypto.getRandomValues(new Uint8Array(32))).map((b) => b.toString(16).padStart(2, "0")).join("");
+    const result = { session_id: `session_demo${rand.slice(0, 12)}`, responses: [{ session_nullifier: [`0x${rand}`] }] } as unknown as IDKitResultSession;
+    void onSuccess(result);
+  };
+
   const doClaim = async () => {
     if (!me) return;
     setClaim({ pending: true });
@@ -305,6 +315,11 @@ export function BorrowFlow() {
           {status === "preparing" ? "Preparing…" : status === "signing" ? "Signing in…" : "Sign in with World ID"}
         </button>
         {!proven && <p className="muted" style={{ marginTop: 6 }}>Complete Step 1 to unlock sign-in.</p>}
+        {proven && (
+          <button className="btn" style={{ marginTop: 8, display: "block" }} onClick={demoSignIn} disabled={status === "signing"}>
+            Use a demo identity (skip scan)
+          </button>
+        )}
       </div>
       {ctx && (
         <IDKitSessionWidget
