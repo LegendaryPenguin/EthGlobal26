@@ -209,19 +209,31 @@ export function createApplyHandler(raw: Record<string, string>) {
     try {
       if (!env.RP_SIGNING_KEY) return json(res, 500, { ok: false, error: "server not configured" });
       const b = (await readJson(req)) as {
-        sessionNullifier?: string; requestedPrincipal?: string; income?: number; age?: number; country?: string; occupation?: string;
+        sessionNullifier?: string; requestedPrincipal?: string; age?: number; country?: string; occupation?: string;
+        eligibility?: ProofSubmission;
       };
-      if (!b.sessionNullifier || !b.income || !b.age) return json(res, 400, { ok: false, error: "missing application fields" });
+      if (!b.sessionNullifier || !b.age) return json(res, 400, { ok: false, error: "missing application fields" });
       if (b.age < 18) return json(res, 403, { ok: false, error: "age_below_18", detail: "Must be 18 or older." });
+
+      // ZK GATE: verify the in-browser eligibility proof (income >= threshold AND not on the default
+      // list) BEFORE underwriting. Income is NOT in this request — only { proofHex, publicInputs }.
+      if (!b.eligibility) {
+        return json(res, 403, { ok: false, error: "eligibility_proof_required", detail: "Generate the in-browser eligibility proof first." });
+      }
+      const gate = await verifyEligibility(b.eligibility, { enforceReplay: raw.ZK_ENFORCE_NULLIFIER_REPLAY === "1" });
+      if (!gate.ok) return json(res, 403, { ok: false, error: "eligibility_denied", detail: gate.reason });
+      console.log("[zk] /apply eligibility gate passed; nullifier", gate.nullifier);
+
       const wallet = managedAccount(b.sessionNullifier, env.RP_SIGNING_KEY).address;
       const { id, status } = await submitApplication({
         borrowerWallet: wallet,
         requestedPrincipal: b.requestedPrincipal || "500 USDC",
         walletAddresses: [wallet],
         identity: {
+          // Income is NEVER sent — the ZK proof attests income >= threshold privately. The TEE/CRE
+          // underwrites on that verdict + the non-income signals below.
           world_id_nullifier: b.sessionNullifier, zk_eligibility_proof_valid: true,
           age: b.age, country: b.country || "US", occupation: b.occupation || "",
-          self_reported_yearly_income_usd: b.income,
         },
       });
       console.log(`[cre] application submitted → inference ${id} (${status})`);

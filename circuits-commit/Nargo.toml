@@ -1,0 +1,7 @@
+[package]
+name = "vouch_commit"
+type = "bin"
+authors = ["Vouch"]
+compiler_version = ">=1.0.0"
+
+[dependencies]
