@@ -119,15 +119,14 @@ export function createSigninHandler(raw: Record<string, string>) {
       // at /apply — over the income the human actually self-reports in the application wizard. Keeping
       // the gate off sign-in means the order is World ID -> income+questionnaire -> ZK proof.
 
-      // 1. World ID SESSION: repeatable, validated via the authenticated World App bridge — NOT
-      //    /api/v4/verify (that endpoint is for one-time uniqueness/action proofs and rejects a
-      //    session with "action is required"). Uniqueness/anti-respawn is enforced ON-CHAIN
-      //    (one passport per session_nullifier).
-      const sessionId = (result as { session_id?: string }).session_id;
-      const responses = (result.responses as Array<{ session_nullifier?: string[] }>) ?? [];
-      const sessionNullifier = responses[0]?.session_nullifier?.[0];
-      if (!sessionId || !sessionNullifier) return json(res, 400, { ok: false, error: "invalid session result" });
-      console.log(`[world] /api/world/signin → session ${sessionId.slice(0, 14)}… nullifier ${sessionNullifier.slice(0, 10)}…`);
+      // 1. World ID: read the RP-scoped nullifier from the proof the authenticated World App returned
+      //    via the bridge. Supports the docs-recommended ACTION flow (IDKitRequestWidget → responses[].
+      //    nullifier) and the older session flow (responses[].session_nullifier[0]). Uniqueness/anti-
+      //    respawn is enforced ON-CHAIN (one passport per nullifier).
+      const responses = (result.responses as Array<{ session_nullifier?: string[]; nullifier?: string }>) ?? [];
+      const sessionNullifier = responses[0]?.session_nullifier?.[0] ?? responses[0]?.nullifier;
+      if (!sessionNullifier) return json(res, 400, { ok: false, error: "invalid verification result" });
+      console.log(`[world] /api/world/signin → nullifier ${sessionNullifier.slice(0, 10)}…`);
 
       // 2. Provision the human's custodial wallet + relayer mints/seeds on first sight.
       const wallet = managedAccount(sessionNullifier, env.RP_SIGNING_KEY).address;

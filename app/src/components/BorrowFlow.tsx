@@ -1,15 +1,14 @@
 import { useState } from "react";
-import { IDKitSessionWidget, CredentialRequest, type IDKitResultSession } from "@worldcoin/idkit";
+import { IDKitRequestWidget, proofOfHuman, type IDKitResult } from "@worldcoin/idkit";
 import { formatUnits } from "viem";
 import { ApplicationWizard, type CreDecision } from "./ApplicationWizard";
 import { logEvent, arcTx } from "../devlog";
 
 const APP_ID = import.meta.env.VITE_WORLD_APP_ID as `app_${string}` | undefined;
+// The World ID action verifications register against (shows in the portal; the hackathon-track signal).
+const ACTION = (import.meta.env.VITE_WORLD_ACTION_ID as string) || "mint-credit-passport";
 const RPC = (import.meta.env.VITE_ARC_RPC_URL as string) || "";
 const IS_LOCAL = /127\.0\.0\.1|localhost/.test(RPC);
-// World ID environment must match where your app_id + RP signing key are registered. Your app shows
-// BOTH Staging and Production active — if the scan fails with "try again", flip VITE_WORLD_ENV.
-const WORLD_ENV = (((import.meta.env.VITE_WORLD_ENV as string) || "production") === "staging" ? "staging" : "production") as "production" | "staging";
 const STANDING = ["Unverified", "Good", "Late", "Defaulted", "Locked out"];
 
 type RpContext = { rp_id: string; nonce: string; created_at: number; expires_at: number; signature: string };
@@ -68,14 +67,13 @@ export function BorrowFlow() {
     }
   };
 
-  const onSuccess = async (result: IDKitResultSession) => {
+  const onSuccess = async (result: IDKitResult) => {
     setStatus("signing");
     setError(undefined);
     try {
-      // Each sign-in is a FRESH World ID session (no existing_session_id resume) so a new person can
-      // always scan a new QR — the demo expects many distinct humans, not one returning account.
-      // Sign-in proves PERSONHOOD only — no eligibility proof here. The ZK gate runs later at /apply,
-      // over the income the human self-reports in the application wizard.
+      // Action-based World ID verify (docs-recommended IDKitRequestWidget path): the server forwards the
+      // proof to World's /api/v4/verify/{rp_id}, then derives the human's managed wallet from the
+      // RP-scoped nullifier. Sign-in proves PERSONHOOD only — the ZK income gate runs later at /apply.
       const data = (await (await fetch("/api/world/signin", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ result }),
       })).json()) as { ok: boolean; error?: string; detail?: string } & SignedIn;
@@ -90,13 +88,12 @@ export function BorrowFlow() {
     }
   };
 
-  // Demo fallback: the World App scan is flaky for this RP config, but the server already trusts the
-  // bridge-delivered session_nullifier (no /api/v4/verify). This signs in with a fresh demo identity
-  // (random nullifier) so the FULL flow — real ZK proof, passport, CRE, claim — is demoable today.
-  // The real World ID scan above remains the primary path.
+  // Demo fallback: signs in with a fresh demo identity (random RP-scoped nullifier, same shape the
+  // action widget returns) so the FULL flow — real ZK proof, passport, CRE, claim — is demoable
+  // without a World App scan. The real World ID scan above remains the primary path.
   const demoSignIn = () => {
     const rand = Array.from(crypto.getRandomValues(new Uint8Array(32))).map((b) => b.toString(16).padStart(2, "0")).join("");
-    const result = { session_id: `session_demo${rand.slice(0, 12)}`, responses: [{ session_nullifier: [`0x${rand}`] }] } as unknown as IDKitResultSession;
+    const result = { responses: [{ nullifier: `0x${rand}` }] } as unknown as IDKitResult;
     void onSuccess(result);
   };
 
@@ -212,13 +209,16 @@ export function BorrowFlow() {
         </button>
       </div>
       {ctx && (
-        <IDKitSessionWidget
+        <IDKitRequestWidget
           open={open}
           onOpenChange={setOpen}
           app_id={APP_ID}
-          environment={WORLD_ENV}
+          action={ACTION}
           rp_context={ctx}
-          constraints={CredentialRequest("proof_of_human")}
+          // Accept v3 (legacy) proofs too — Orb-verified people on older/device-verified World App
+          // installs can't complete a v4-ONLY request and get rejected otherwise (docs: allow_legacy_proofs).
+          allow_legacy_proofs={true}
+          preset={proofOfHuman()}
           onSuccess={onSuccess}
           onError={(code) => { setError(`World ID error: ${String(code)}`); setStatus("error"); }}
         />
