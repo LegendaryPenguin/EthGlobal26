@@ -123,10 +123,32 @@ export function createSigninHandler(raw: Record<string, string>) {
       //    via the bridge. Supports the docs-recommended ACTION flow (IDKitRequestWidget → responses[].
       //    nullifier) and the older session flow (responses[].session_nullifier[0]). Uniqueness/anti-
       //    respawn is enforced ON-CHAIN (one passport per nullifier).
-      const responses = (result.responses as Array<{ session_nullifier?: string[]; nullifier?: string }>) ?? [];
+      const responses = (result.responses as Array<{ session_nullifier?: string[]; nullifier?: string; proof?: unknown }>) ?? [];
       const sessionNullifier = responses[0]?.session_nullifier?.[0] ?? responses[0]?.nullifier;
       if (!sessionNullifier) return json(res, 400, { ok: false, error: "invalid verification result" });
       console.log(`[world] /api/world/signin → nullifier ${sessionNullifier.slice(0, 10)}…`);
+
+      // 1b. Cloud-verify the proof with World so the verification REGISTERS in the dev portal (the
+      //     hackathon-track signal) — World records the human only when the proof is POSTed to its
+      //     verify endpoint. Real scans carry responses[].proof; the demo button has none, so it skips.
+      //     Forward the IDKit result as-is (docs: no field remapping). rp_id scopes + authenticates it.
+      if (Array.isArray(responses[0]?.proof) && env.RP_ID) {
+        const base = env.WORLD_API_BASE || "https://developer.world.org";
+        try {
+          const vr = await fetch(`${base}/api/v4/verify/${env.RP_ID}`, {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(result),
+          });
+          if (!vr.ok) {
+            const detail = (await vr.text()).slice(0, 300);
+            console.error("[world] cloud verify failed", vr.status, detail);
+            return json(res, 403, { ok: false, error: "world_verify_failed", detail: `verify ${vr.status}: ${detail}` });
+          }
+          console.log("[world] cloud verify ok — registered against action", env.ACTION);
+        } catch (e) {
+          console.error("[world] cloud verify error", e);
+          return json(res, 502, { ok: false, error: "world_verify_unreachable", detail: errMsg(e) });
+        }
+      }
 
       // 2. Provision the human's custodial wallet + relayer mints/seeds on first sight.
       const wallet = managedAccount(sessionNullifier, env.RP_SIGNING_KEY).address;
@@ -193,6 +215,8 @@ export function createClaimHandler(raw: Record<string, string>) {
     } catch (e) {
       const m = errMsg(e);
       if (m.includes("NotInGoodStanding")) return json(res, 403, { ok: false, error: "locked_out", detail: "This human is locked out (a prior loan defaulted)." });
+      if (m.includes("VaultUnderfunded")) return json(res, 503, { ok: false, error: "pool_underfunded", detail: "The lending pool doesn't have enough USDC to cover this advance. Fund the LoanVault (faucet.circle.com) and retry, or request a smaller amount." });
+      if (m.includes("MissingAttestation")) return json(res, 409, { ok: false, error: "missing_attestation", detail: "Loan terms aren't finalized yet — wait for the underwriting verdict, then claim." });
       return json(res, 500, { ok: false, error: m });
     }
   };
