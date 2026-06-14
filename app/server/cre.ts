@@ -39,7 +39,9 @@ export type Identity = {
   age: number; // must be >= 18
   country: string;
   occupation: string;
-  self_reported_yearly_income_usd: number; // primary risk-banding variable
+  // ZK-verified LOWER BOUND on annual income: the public policy threshold the in-browser proof cleared.
+  // The exact income is private and NEVER sent (Golden Rule #2). This floor is the risk-banding signal.
+  zk_income_floor_usd: number;
 };
 
 export type Decision = {
