@@ -1,27 +1,32 @@
-// Vouch — client-side eligibility proving (Track D money-shot).
+// Vouch — client-side eligibility proving (Track D money-shot), DYNAMIC over self-reported income.
 //
-// The borrower proves, IN THE BROWSER, that their income clears the policy threshold and that
-// they are not on the default list — WITHOUT revealing the income figure. `monthly_income` is a
-// PRIVATE witness here: it is never a public input and never sent to any server.
+// The borrower proves, IN THE BROWSER, that the income they typed clears the policy threshold and
+// that they're not on the default list — WITHOUT revealing the income figure. `monthly_income` is a
+// PRIVATE witness: never a public input, never sent to any server.
 //
-// PUBLIC INPUT ORDER (load-bearing, matches circuits/src/main.nr `pub` params and the on-chain
-// verifier): [threshold, default_list_root, income_commitment, nullifier].
+// PUBLIC INPUT ORDER (load-bearing — matches circuits/src/main.nr `pub` params + verifyEligibility.ts
+// + EligibilityGate.sol): [threshold, default_list_root, income_commitment, nullifier].
 //
-// DEMO SIMPLIFICATION (documented): we prove against a fixed, issuer-published income *credential*
-// (the canonical witness whose commitment is `INCOME_COMMITMENT`). Productionising means computing
-// the commitment for the borrower's real figure from a signed credential — see circuits/ZK-RESEARCH.md
-// and the `TODO(credential)` in the circuit. The privacy property (income is a private witness) is
-// real regardless of which committed figure is used.
+// DYNAMIC vs the old hardcoded witness:
+//   - income_commitment is computed in-browser (commit.json helper) from the TYPED income + a fresh
+//     blinding, so the circuit's `pedersen(income, blinding) == income_commitment` holds for the real
+//     number.
+//   - the public `nullifier` is derived from the borrower's WORLD ID nullifier (passed in), so the
+//     proof is per-human and bound to the same identity that holds the passport (the helper computes
+//     `pedersen(pedersen(borrower_secret))`, matching the circuit's nullifier derivation).
+//
+// HONESTY: income is SELF-REPORTED, so the commitment is self-minted — this is a PRIVACY gate
+// (income hidden) + not-on-default-list + one-human nullifier, NOT income anti-fraud. The TEE/CRE
+// underwriter handles fraud. (Issuer-signed credential = TODO(credential) in the circuit.)
+//
+// UNITS: reconciled to YEARLY. The wizard collects yearly income; `threshold` is the yearly bar
+// (12000). The circuit param is named `monthly_income` (legacy) but the comparison is unit-agnostic;
+// we feed yearly on both sides consistently.
 
-export const POLICY_THRESHOLD = "3000"; // u64, matches underwriting policy
+export const POLICY_THRESHOLD = "12000"; // yearly USD bar (u64). Mirror in verifyEligibility.ts.
 export const DEFAULT_LIST_ROOT =
-  "0x00f9952fe025cd3ad8ff1346fb409cdb22c9e7d5eb266d74d2e1b156a5d438ba";
-export const INCOME_COMMITMENT =
-  "0x0f7f3e4425c8afd3e2cf34e9c6adaae77b2dcf67036bc7e94b19080d045dca67";
-export const NULLIFIER =
-  "0x08fec089a359683c92d11a88c9737f282e71bd436a59611f7f15799ef844c039";
+  "0x00f9952fe025cd3ad8ff1346fb409cdb22c9e7d5eb266d74d2e1b156a5d438ba"; // root of low=0/siblings=0 demo tree
 
-/** Public inputs as the verifier (backend or on-chain) expects them, in order. */
 export interface EligibilityPublicInputs {
   threshold: string;
   defaultListRoot: string;
@@ -30,33 +35,17 @@ export interface EligibilityPublicInputs {
 }
 
 export interface EligibilityProof {
-  /** UltraHonk proof bytes, hex-encoded (0x…). */
   proofHex: string;
-  /** Public inputs, hex strings, in circuit order. */
   publicInputs: string[];
-  /** Structured view of the same public inputs. */
   inputs: EligibilityPublicInputs;
-  /** Wall-clock proving time (ms) for the demo. */
   ms: number;
 }
 
-/** The canonical private witness. `monthly_income` NEVER leaves this module. */
-function witness() {
-  return {
-    // PRIVATE — none of these are public inputs.
-    monthly_income: "5000",
-    income_blinding: "12345",
-    borrower_secret: "777",
-    low_neighbour: "0",
-    high_neighbour: "0xFFFFFFFFFFFFFFFF",
-    merkle_index_bits: [false, false, false, false, false, false, false, false],
-    merkle_siblings: ["0", "0", "0", "0", "0", "0", "0", "0"],
-    // PUBLIC.
-    threshold: POLICY_THRESHOLD,
-    default_list_root: DEFAULT_LIST_ROOT,
-    income_commitment: INCOME_COMMITMENT,
-    nullifier: NULLIFIER,
-  };
+export interface ProveOpts {
+  /** Self-reported YEARLY income (USD). The private witness — never leaves this module. */
+  incomeYearly: number;
+  /** The borrower's World ID nullifier (hex) — binds the proof to this human. */
+  worldNullifier: string;
 }
 
 function toHex(bytes: Uint8Array): string {
@@ -64,7 +53,6 @@ function toHex(bytes: Uint8Array): string {
   for (const b of bytes) s += b.toString(16).padStart(2, "0");
   return s;
 }
-
 function fromHex(hex: string): Uint8Array {
   const clean = hex.startsWith("0x") ? hex.slice(2) : hex;
   const out = new Uint8Array(clean.length / 2);
@@ -72,71 +60,110 @@ function fromHex(hex: string): Uint8Array {
   return out;
 }
 
-// Cache the circuit artifact so verify (after prove) doesn't re-fetch.
-let _circuitPromise: Promise<{ bytecode: string }> | null = null;
-function loadCircuit(): Promise<{ bytecode: string }> {
-  if (!_circuitPromise) {
-    _circuitPromise = fetch("/vouch_eligibility.json").then((r) => {
-      if (!r.ok) throw new Error("could not load circuit artifact");
+/** A fresh 31-byte blinding (stays under the BN254 field modulus). */
+function randomBlinding(): string {
+  const b = new Uint8Array(31);
+  crypto.getRandomValues(b);
+  return toHex(b);
+}
+
+/** Field-normalise the World nullifier to use as the circuit's borrower_secret. */
+function secretFromWorldNullifier(worldNullifier: string): string {
+  return worldNullifier?.startsWith("0x") ? worldNullifier : "0x" + BigInt(worldNullifier || "0").toString(16);
+}
+
+let _eligCircuit: Promise<{ bytecode: string }> | null = null;
+function loadEligibilityCircuit(): Promise<{ bytecode: string }> {
+  if (!_eligCircuit) {
+    _eligCircuit = fetch("/vouch_eligibility.json").then((r) => {
+      if (!r.ok) throw new Error("could not load eligibility circuit artifact");
       return r.json();
     });
   }
-  return _circuitPromise;
+  return _eligCircuit;
 }
-
-/**
- * Verify a proof IN THE BROWSER with the same UltraHonk verifier the backend / on-chain gate uses.
- * Returns true for a valid proof, false for a tampered/invalid one. Fast (no proving).
- */
-export async function verifyEligibilityProof(proofHex: string, publicInputs: string[]): Promise<boolean> {
-  const { Barretenberg, UltraHonkBackend } = await import("@aztec/bb.js");
-  const circuit = await loadCircuit();
-  const api = await Barretenberg.new();
-  try {
-    const backend = new UltraHonkBackend(circuit.bytecode, api);
-    return await backend.verifyProof({ proof: fromHex(proofHex), publicInputs });
-  } catch {
-    // bb throws on malformed proofs — for the demo that *is* a rejection.
-    return false;
-  } finally {
-    await api.destroy();
+let _commitCircuit: Promise<unknown> | null = null;
+function loadCommitCircuit(): Promise<unknown> {
+  if (!_commitCircuit) {
+    _commitCircuit = fetch("/commit.json").then((r) => {
+      if (!r.ok) throw new Error("could not load commit helper artifact");
+      return r.json();
+    });
   }
+  return _commitCircuit;
 }
 
 /**
- * Forge attempt for the demo: flip one byte of the proof. A sound proof system rejects this with
- * overwhelming probability — that's what makes the proof meaningful, not just present.
+ * Compute the two PUBLIC field values the eligibility circuit binds against — income_commitment and
+ * nullifier — from the dynamic (income, blinding, borrower_secret), by EXECUTING the commit helper
+ * circuit (no proof; just the hash gadget). Matches the circuit's own pedersen derivation.
  */
-export function tamperProofHex(proofHex: string): string {
-  const bytes = fromHex(proofHex);
-  const i = Math.floor(bytes.length / 2); // somewhere in the middle of the proof body
-  bytes[i] ^= 0xff;
-  return toHex(bytes);
+async function computeCommitAndNullifier(
+  income: number,
+  blinding: string,
+  borrowerSecret: string,
+): Promise<{ incomeCommitment: string; nullifier: string }> {
+  const { Noir } = await import("@noir-lang/noir_js");
+  const circuit = await loadCommitCircuit();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const noir = new Noir(circuit as any);
+  const { returnValue } = await noir.execute({
+    monthly_income: String(income),
+    blinding,
+    borrower_secret: borrowerSecret,
+  });
+  const arr = Array.isArray(returnValue) ? (returnValue as string[]) : [String(returnValue)];
+  if (arr.length < 2) throw new Error("commit helper returned unexpected shape");
+  return { incomeCommitment: arr[0], nullifier: arr[1] };
+}
+
+/** Pre-warm the proving stack (call on page mount so "Apply" doesn't pay the cold-load tax). */
+export async function warmupProver(): Promise<void> {
+  await Promise.all([
+    import("@noir-lang/noir_js"),
+    import("@aztec/bb.js"),
+    loadEligibilityCircuit(),
+    loadCommitCircuit(),
+  ]).catch(() => {});
 }
 
 /**
- * Generate the eligibility proof in the browser. Lazily imports the proving stack so the heavy
- * wasm is only pulled when the borrower actually clicks "prove" (keeps it out of the main bundle).
+ * Generate the eligibility proof in the browser over the borrower's typed income.
+ * Throws if income < threshold (the circuit's `assert(income >= threshold)` fails in noir.execute) —
+ * the caller turns that into an honest "you don't meet the bar".
  */
-export async function proveEligibility(): Promise<EligibilityProof> {
+export async function proveEligibility(opts: ProveOpts): Promise<EligibilityProof> {
   const t0 = performance.now();
+  const income = Math.max(0, Math.floor(opts.incomeYearly));
+  const blinding = randomBlinding();
+  const borrowerSecret = secretFromWorldNullifier(opts.worldNullifier);
 
-  // Lazy, browser-only imports.
+  const { incomeCommitment, nullifier } = await computeCommitAndNullifier(income, blinding, borrowerSecret);
+
   const [{ Noir }, { Barretenberg, UltraHonkBackend }] = await Promise.all([
     import("@noir-lang/noir_js"),
     import("@aztec/bb.js"),
   ]);
-
-  const circuit = await fetch("/vouch_eligibility.json").then((r) => {
-    if (!r.ok) throw new Error("could not load circuit artifact");
-    return r.json();
-  });
-
-  const noir = new Noir(circuit);
+  const circuit = await loadEligibilityCircuit();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const noir = new Noir(circuit as any);
   const api = await Barretenberg.new();
   const backend = new UltraHonkBackend(circuit.bytecode, api);
 
-  const { witness: w } = await noir.execute(witness());
+  // monthly_income carries the (yearly) figure — PRIVATE. If income < threshold, execute throws.
+  const { witness: w } = await noir.execute({
+    monthly_income: String(income),
+    income_blinding: blinding,
+    borrower_secret: borrowerSecret,
+    low_neighbour: "0",
+    high_neighbour: "0xFFFFFFFFFFFFFFFF",
+    merkle_index_bits: [false, false, false, false, false, false, false, false],
+    merkle_siblings: ["0", "0", "0", "0", "0", "0", "0", "0"],
+    threshold: POLICY_THRESHOLD,
+    default_list_root: DEFAULT_LIST_ROOT,
+    income_commitment: incomeCommitment,
+    nullifier,
+  });
   const proof = await backend.generateProof(w);
   await api.destroy();
 
@@ -151,4 +178,27 @@ export async function proveEligibility(): Promise<EligibilityProof> {
     },
     ms: Math.round(performance.now() - t0),
   };
+}
+
+/** Verify a proof IN THE BROWSER with the same UltraHonk verifier the backend / chain uses. */
+export async function verifyEligibilityProof(proofHex: string, publicInputs: string[]): Promise<boolean> {
+  const { Barretenberg, UltraHonkBackend } = await import("@aztec/bb.js");
+  const circuit = await loadEligibilityCircuit();
+  const api = await Barretenberg.new();
+  try {
+    const backend = new UltraHonkBackend(circuit.bytecode, api);
+    return await backend.verifyProof({ proof: fromHex(proofHex), publicInputs });
+  } catch {
+    return false;
+  } finally {
+    await api.destroy();
+  }
+}
+
+/** Forge attempt for the demo: flip one byte. A sound system rejects this with overwhelming prob. */
+export function tamperProofHex(proofHex: string): string {
+  const bytes = fromHex(proofHex);
+  const i = Math.floor(bytes.length / 2);
+  bytes[i] ^= 0xff;
+  return toHex(bytes);
 }

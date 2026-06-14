@@ -297,7 +297,7 @@ export function BorrowFlow() {
         <button
           className="btn"
           style={{ marginTop: 10 }}
-          onClick={() => { void zk.prove(); }}
+          onClick={() => { void zk.prove({ incomeYearly: 18000, worldNullifier: "0x1" }); }}
           disabled={zk.status === "proving" || proven}
         >
           {zk.status === "proving" ? "Proving in your browser…" : proven ? "Eligibility proven ✓" : "Prove eligibility"}
