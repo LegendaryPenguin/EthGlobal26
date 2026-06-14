@@ -20,6 +20,7 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { underwrite } from "./underwrite.js";
 import { verifyEligibility, type ProofSubmission } from "./verifyEligibility.js";
+import { submitApplication, readDecision, decisionToTerms } from "./cre.js";
 
 const PASSPORT_ABI = [
   { type: "function", name: "verifyAndMint", stateMutability: "nonpayable", inputs: [{ name: "signal", type: "address" }, { name: "root", type: "uint256" }, { name: "nullifierHash", type: "uint256" }, { name: "proof", type: "uint256[8]" }], outputs: [] },
@@ -196,6 +197,73 @@ export function createClaimHandler(raw: Record<string, string>) {
       const m = errMsg(e);
       if (m.includes("NotInGoodStanding")) return json(res, 403, { ok: false, error: "locked_out", detail: "This human is locked out (a prior loan defaulted)." });
       return json(res, 500, { ok: false, error: m });
+    }
+  };
+}
+
+/// POST /api/world/apply — submit the loan application to the Chainlink CRE / Confidential AI
+/// (/trigger). Returns the inference `id` to poll. The income/PII goes only into the encrypted blob.
+export function createApplyHandler(raw: Record<string, string>) {
+  const env = readEnv(raw);
+  return async (req: IncomingMessage, res: ServerResponse) => {
+    try {
+      if (!env.RP_SIGNING_KEY) return json(res, 500, { ok: false, error: "server not configured" });
+      const b = (await readJson(req)) as {
+        sessionNullifier?: string; requestedPrincipal?: string; income?: number; age?: number; country?: string; occupation?: string;
+      };
+      if (!b.sessionNullifier || !b.income || !b.age) return json(res, 400, { ok: false, error: "missing application fields" });
+      if (b.age < 18) return json(res, 403, { ok: false, error: "age_below_18", detail: "Must be 18 or older." });
+      const wallet = managedAccount(b.sessionNullifier, env.RP_SIGNING_KEY).address;
+      const { id, status } = await submitApplication({
+        borrowerWallet: wallet,
+        requestedPrincipal: b.requestedPrincipal || "500 USDC",
+        walletAddresses: [wallet],
+        identity: {
+          world_id_nullifier: b.sessionNullifier, zk_eligibility_proof_valid: true,
+          age: b.age, country: b.country || "US", occupation: b.occupation || "",
+          self_reported_yearly_income_usd: b.income,
+        },
+      });
+      console.log(`[cre] application submitted → inference ${id} (${status})`);
+      return json(res, 200, { ok: true, id, status });
+    } catch (e) {
+      return json(res, 500, { ok: false, error: errMsg(e) });
+    }
+  };
+}
+
+/// POST /api/world/decision — poll CreditRegistry (Sepolia) for the CRE verdict; once it exists, map
+/// it to Vouch Terms and write setTerms on Arc so LoanVault.claim() can disburse. Returns decided:false
+/// while still pending (client polls every ~5s).
+export function createDecisionHandler(raw: Record<string, string>) {
+  const env = readEnv(raw);
+  return async (req: IncomingMessage, res: ServerResponse) => {
+    try {
+      if (!env.RP_SIGNING_KEY || !env.RELAYER_PK || !env.REGISTRY || !env.PASSPORT)
+        return json(res, 500, { ok: false, error: "server not configured" });
+      const { sessionNullifier, id } = (await readJson(req)) as { sessionNullifier?: string; id?: string };
+      if (!sessionNullifier || !id) return json(res, 400, { ok: false, error: "missing sessionNullifier or id" });
+
+      const decision = await readDecision(id);
+      if (!decision) return json(res, 200, { ok: true, decided: false });
+
+      // Verdict is in → write it onto Vouch's seam (Arc) so the borrower can claim.
+      const wallet = managedAccount(sessionNullifier, env.RP_SIGNING_KEY).address;
+      const pub = createPublicClient({ chain: arc(env.RPC), transport: http(env.RPC) });
+      const relayer = createWalletClient({ account: privateKeyToAccount(env.RELAYER_PK), chain: arc(env.RPC), transport: http(env.RPC) });
+      const passportId = (await pub.readContract({ address: env.PASSPORT, abi: PASSPORT_ABI, functionName: "passportIdOf", args: [wallet] })) as Hex;
+      const terms = decisionToTerms(decision, { borrower: wallet, passportId });
+      const setTermsTx = await relayer.writeContract({ address: env.REGISTRY, abi: REGISTRY_ABI, functionName: "setTerms", args: [terms] });
+      await pub.waitForTransactionReceipt({ hash: setTermsTx });
+      console.log(`[cre] decision ${id} → approved=${decision.approved} → setTerms ${setTermsTx}`);
+
+      return json(res, 200, {
+        ok: true, decided: true, approved: decision.approved,
+        decision: { principal: decision.principal, tranche: decision.tranche, riskBand: decision.riskBand, denialReason: decision.denialReason, transcriptHash: decision.transcriptHash, inferenceId: decision.inferenceId },
+        receipts: { setTermsTx, attestationRef: decision.transcriptHash },
+      });
+    } catch (e) {
+      return json(res, 500, { ok: false, error: errMsg(e) });
     }
   };
 }
