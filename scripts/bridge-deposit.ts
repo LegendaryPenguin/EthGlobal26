@@ -85,23 +85,31 @@ async function approveUsdc(cfg: CctpConfig, amount: bigint): Promise<void> {
   const pub = publicClientFor(source);
   const wallet = walletClientFor(source, account);
 
+  // CCTP V2 pulls the burn amount via the TokenMessenger's local TokenMinter (the minter calls
+  // transferFrom), so the USDC allowance must be granted to the MINTER, not the TokenMessenger.
+  const minter = (await pub.readContract({
+    address: source.tokenMessenger,
+    abi: [{ type: "function", name: "localMinter", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] }] as const,
+    functionName: "localMinter",
+  })) as `0x${string}`;
+
   const current = await pub.readContract({
     address: source.usdc,
     abi: erc20Abi,
     functionName: "allowance",
-    args: [account.address, source.tokenMessenger],
+    args: [account.address, minter],
   });
   if (current >= amount) {
-    log(`Allowance already sufficient (${formatUnits(current, USDC_DECIMALS)} USDC). Skipping approve.`);
+    log(`Allowance to minter sufficient (${formatUnits(current, USDC_DECIMALS)} USDC). Skipping approve.`);
     return;
   }
 
-  log(`Approving ${formatUnits(amount, USDC_DECIMALS)} USDC to TokenMessenger ${source.tokenMessenger}…`);
+  log(`Approving ${formatUnits(amount, USDC_DECIMALS)} USDC to TokenMinter ${minter}…`);
   const hash = await wallet.writeContract({
     address: source.usdc,
     abi: erc20Abi,
     functionName: "approve",
-    args: [source.tokenMessenger, amount],
+    args: [minter, amount],
   });
   await pub.waitForTransactionReceipt({ hash });
   log(`  approve confirmed: ${hash}`);
