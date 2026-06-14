@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { IDKitSessionWidget, CredentialRequest, type IDKitResultSession } from "@worldcoin/idkit";
 import { formatUnits } from "viem";
 import { useProveEligibility } from "../hooks/useProveEligibility";
 import { ApplicationWizard, type CreDecision } from "./ApplicationWizard";
+import { logEvent, arcTx } from "../devlog";
 
 const APP_ID = import.meta.env.VITE_WORLD_APP_ID as `app_${string}` | undefined;
 const RPC = (import.meta.env.VITE_ARC_RPC_URL as string) || "";
@@ -122,6 +123,15 @@ export function BorrowFlow() {
   const [cre, setCre] = useState<{ decision: CreDecision; receipts: { setTermsTx?: string; attestationRef?: string } } | null>(null);
   const zk = useProveEligibility();
 
+  // Feed ZK proof lifecycle into the live dev panel.
+  useEffect(() => {
+    if (zk.proof) logEvent({ kind: "proof", label: "ZK eligibility proof generated (UltraHonk)", value: zk.proof.proofHex });
+  }, [zk.proof]);
+  useEffect(() => {
+    if (zk.verdict?.kind === "valid") logEvent({ kind: "proof", label: "ZK proof verified ✓" });
+    else if (zk.verdict?.kind === "rejected") logEvent({ kind: "error", label: "Tampered proof rejected ✗ (unforgeable)" });
+  }, [zk.verdict]);
+
   if (!APP_ID) {
     return <p className="muted">Set VITE_WORLD_APP_ID to enable World ID sign-in (app/.env.local).</p>;
   }
@@ -158,6 +168,8 @@ export function BorrowFlow() {
       if (!data.ok) throw new Error(data.detail ?? data.error ?? "sign-in failed");
       setMe(data);
       setStatus("ready");
+      logEvent({ kind: "id", label: "World ID human verified", value: data.sessionNullifier });
+      if (data.receipts?.mintTx) logEvent({ kind: "tx", label: "ERC-8004 passport minted", value: data.receipts.mintTx, link: arcTx(data.receipts.mintTx) });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setStatus("error");
@@ -171,7 +183,10 @@ export function BorrowFlow() {
       const data = (await (await fetch("/api/world/claim", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionNullifier: me.sessionNullifier }),
       })).json()) as { ok: boolean; txHash?: string; error?: string; detail?: string };
-      if (data.ok) setClaim({ pending: false, tx: data.txHash });
+      if (data.ok) {
+        setClaim({ pending: false, tx: data.txHash });
+        if (data.txHash) logEvent({ kind: "tx", label: "USDC disbursed on Arc (claim)", value: data.txHash, link: arcTx(data.txHash) });
+      }
       else setClaim({ pending: false, error: data.detail ?? data.error });
     } catch (e) {
       setClaim({ pending: false, error: e instanceof Error ? e.message : String(e) });
