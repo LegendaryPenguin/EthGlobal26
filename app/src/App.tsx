@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { BorrowFlow } from "./components/BorrowFlow";
 import { DevPanel } from "./components/DevPanel";
+import { ContainerScroll } from "@/components/ui/container-scroll-animation";
 
 const Arrow = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -122,6 +123,28 @@ export function App() {
               </svg>
             </div>
           </div>
+        </section>
+
+        {/* product showcase — scroll-driven 3D reveal (framer-motion) */}
+        <section className="section" aria-label="Product preview">
+          <ContainerScroll
+            titleComponent={
+              <>
+                <p className="eyebrow" style={{ justifyContent: "center" }}>See it in action</p>
+                <h2 style={{ fontSize: "clamp(28px,5vw,56px)", lineHeight: 1.05, margin: "8px 0 0" }}>
+                  Your credit passport,<br />
+                  <span style={{ color: "#D6553A" }}>one human, one identity.</span>
+                </h2>
+              </>
+            }
+          >
+            <img
+              src="/preview.png"
+              alt="Vouch app preview"
+              className="mx-auto rounded-2xl object-cover h-full w-full object-left-top"
+              draggable={false}
+            />
+          </ContainerScroll>
         </section>
 
         {/* values */}

@@ -40,6 +40,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   return {
     plugins: [react(), worldId(env)],
+    resolve: { alias: { "@": path.resolve(process.cwd(), "src") } },
     // bb.js ships its own wasm + workers. Keep it out of the dep pre-bundler (which mangles the
     // wasm/worker resolution) and target esnext for the top-level await it uses. We deliberately do
     // NOT set COOP/COEP headers (which would break the cross-origin World ID widget) — bb.js then
