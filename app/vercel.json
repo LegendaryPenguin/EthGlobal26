@@ -4,6 +4,6 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
-    "api/world/*.ts": { "memory": 256, "maxDuration": 30 }
+    "api/**/*.ts": { "memory": 256, "maxDuration": 60 }
   }
 }

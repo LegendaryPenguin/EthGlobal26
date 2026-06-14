@@ -1,0 +1,38 @@
+# Alternate deployment (off Vercel): self-host the borrower app's standalone Node server on Render.
+# The server (app/server/standalone.ts) serves the built SPA (dist/) + all /api routes — the same
+# handlers as the Vite dev middleware and the Vercel functions. One always-on host, no serverless
+# timeouts, no deploy-queue limits.
+#
+# Setup: Render → New → Blueprint → point at this repo. Then set the secret env vars below in the
+# Render dashboard (VITE_* are read at build; the rest at runtime). Faucet the relayer for gas.
+services:
+  - type: web
+    name: vouch-borrower
+    runtime: node
+    rootDir: app
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run serve
+    healthCheckPath: /
+    envVars:
+      - key: VITE_ARC_RPC_URL
+        value: https://rpc.testnet.arc.network
+      - key: VITE_WORLD_APP_ID
+        sync: false
+      - key: VITE_WORLD_RP_ID
+        sync: false
+      - key: VITE_WORLD_ACTION_ID
+        value: mint-credit-passport
+      - key: VITE_RATE_ENGINE_ADDRESS
+        value: "0x74D8d8BFBDcdDaf888e1f745f071afFB566919dB"
+      - key: VITE_WALLET_LINK_ADDRESS
+        value: "0x263999c1A58a37dc4554689Fa76eC4adc0429b0e"
+      # --- secrets: set these in the Render dashboard (sync:false = not stored in the repo) ---
+      - key: WORLD_RP_SIGNING_KEY
+        sync: false
+      - key: RELAYER_PRIVATE_KEY
+        sync: false
+      - key: CONF_AI_API_KEY
+        sync: false
+      - key: WORKFLOW_HMAC_SECRET
+        sync: false
