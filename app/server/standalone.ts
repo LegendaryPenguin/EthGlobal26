@@ -13,6 +13,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createSessionContextHandler, createSigninHandler, createClaimHandler, createApplyHandler, createDecisionHandler } from "./verify.js";
 import { createMarketHandler } from "./marketEngine.js";
+import { createLinkWalletHandler } from "./walletLink.js";
 
 const require = createRequire(import.meta.url);
 const IDKIT_WASM = path.join(path.dirname(require.resolve("@worldcoin/idkit-core")), "idkit_wasm_bg.wasm");
@@ -26,6 +27,7 @@ const claim = createClaimHandler(env);
 const apply = createApplyHandler(env);
 const decision = createDecisionHandler(env);
 const market = createMarketHandler(env);
+const linkWallet = createLinkWalletHandler(env);
 
 const MIME: Record<string, string> = {
   ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
@@ -43,6 +45,7 @@ createServer(async (req, res) => {
   if (req.method === "POST" && url === "/api/world/apply") return apply(req, res);
   if (req.method === "POST" && url === "/api/world/decision") return decision(req, res);
   if (url === "/api/market") return market(req, res); // GET reads rates, POST advances the market
+  if (req.method === "POST" && url === "/api/world/link-wallet") return linkWallet(req, res);
 
   // idkit bridge WASM with the correct MIME (else the World App bridge dies).
   if (url.endsWith("idkit_wasm_bg.wasm")) {
