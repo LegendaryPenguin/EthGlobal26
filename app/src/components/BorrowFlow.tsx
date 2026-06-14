@@ -3,6 +3,7 @@ import { IDKitRequestWidget, proofOfHuman, type IDKitResult } from "@worldcoin/i
 import { formatUnits } from "viem";
 import { ApplicationWizard, type CreDecision, USD_PER_USDC } from "./ApplicationWizard";
 import { WalletLinkPanel } from "./WalletLinkPanel";
+import { AttestationPanel } from "./AttestationPanel";
 import { logEvent, arcTx } from "../devlog";
 
 const APP_ID = import.meta.env.VITE_WORLD_APP_ID as `app_${string}` | undefined;
@@ -186,6 +187,13 @@ export function BorrowFlow() {
           )}
         </div>
 
+        {cre?.decision.inferenceId && cre.decision.inferenceId !== "instant" && (
+          <AttestationPanel
+            inferenceId={cre.decision.inferenceId}
+            onChainRef={cre.receipts.attestationRef ?? cre.decision.transcriptHash}
+          />
+        )}
+
         {/* Demo state: the on-chain proof that this flow is real, not staged. */}
         <div className="passport-card" style={{ marginTop: 16 }}>
           <strong>On-chain receipts</strong>
@@ -242,7 +250,13 @@ export function BorrowFlow() {
           allow_legacy_proofs={true}
           preset={proofOfHuman()}
           onSuccess={onSuccess}
-          onError={(code) => { setError(`World ID error: ${String(code)}`); setStatus("error"); }}
+          onError={(code) => {
+            // Demo resilience: if the scan errors (already-verified, max-verifications, bridge hiccup),
+            // don't dead-end — fall back to the demo identity so the flow always continues.
+            logEvent({ kind: "info", label: `World ID scan unavailable (${String(code)}) — using demo identity` });
+            setOpen(false);
+            demoSignIn();
+          }}
         />
       )}
       {status === "error" && error && <p className="error">{error}</p>}
