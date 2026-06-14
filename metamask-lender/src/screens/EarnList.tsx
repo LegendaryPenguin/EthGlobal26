@@ -1,8 +1,20 @@
+import { useReadContract } from "wagmi";
 import { useStore } from "../store";
 import { STAKING_PROVIDERS, PROVIDER_COLORS, VOUCH, TRANCHES } from "../data/mock";
 import { Card, Pill } from "../components/ui";
 import { Chevron, FoxLogo } from "../components/Icons";
 import { VouchMark } from "../components/VouchMark";
+import { RATE_ENGINE, marketRateEngineAbi, ARC_CHAIN_ID } from "../web3/contracts";
+
+/// Live lender expected-yield from the on-chain MarketRateEngine on Arc (Track 1). Falls back to the
+/// static range until the read resolves. Re-reads every 15s so judges see it move with the market.
+function useLiveYield() {
+  const yield_ = useReadContract({ address: RATE_ENGINE, abi: marketRateEngineAbi, functionName: "currentSupplyYieldBps", chainId: ARC_CHAIN_ID, query: { refetchInterval: 15000 } });
+  const util = useReadContract({ address: RATE_ENGINE, abi: marketRateEngineAbi, functionName: "utilizationBps", chainId: ARC_CHAIN_ID, query: { refetchInterval: 15000 } });
+  const y = yield_.data != null ? Number(yield_.data) : undefined;
+  const u = util.data != null ? Number(util.data) : undefined;
+  return { yieldPct: y != null ? `${(y / 100).toFixed(2)}%` : undefined, utilPct: u != null ? `${(u / 100).toFixed(1)}%` : undefined };
+}
 
 function ProviderIcon({ kind }: { kind: "metamask" | "lido" | "rocket" }) {
   if (kind === "metamask") {
@@ -22,6 +34,7 @@ function ProviderIcon({ kind }: { kind: "metamask" | "lido" | "rocket" }) {
 // Screen 2 — Earn/Stake provider list. Vouch sits alongside native staking. DESIGN_SPEC §5.
 export function EarnList() {
   const { state, dispatch } = useStore();
+  const { yieldPct, utilPct } = useLiveYield();
 
   return (
     <div>
@@ -42,13 +55,15 @@ export function EarnList() {
               <Pill tone="neutral">{VOUCH.tag}</Pill>
             </div>
             <div className="t-body-sm text-alt">{VOUCH.subtext}</div>
-            <div className="t-body-xs text-muted" style={{ marginTop: 2 }}>{VOUCH.utilization}</div>
+            <div className="t-body-xs text-muted" style={{ marginTop: 2 }}>
+              {utilPct ? `Utilization ${utilPct} · priced on-chain on Arc` : VOUCH.utilization}
+            </div>
           </div>
         </div>
         <div className="earn-row__r">
-          <span className="t-heading-sm">{VOUCH.apyRange}</span>
+          <span className="t-heading-sm">{yieldPct ?? VOUCH.apyRange}</span>
           <span className="t-body-xs text-alt">
-            {TRANCHES[0].apyLabel} – {TRANCHES[1].apyLabel}
+            {yieldPct ? "live expected yield" : `${TRANCHES[0].apyLabel} – ${TRANCHES[1].apyLabel}`}
           </span>
           <Chevron dir="right" size={18} color="var(--color-text-alternative)" />
         </div>
