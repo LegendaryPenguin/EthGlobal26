@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { IDKitRequestWidget, proofOfHuman, type IDKitResult } from "@worldcoin/idkit";
 import { formatUnits } from "viem";
-import { ApplicationWizard, type CreDecision } from "./ApplicationWizard";
+import { ApplicationWizard, type CreDecision, USD_PER_USDC } from "./ApplicationWizard";
 import { logEvent, arcTx } from "../devlog";
 
 const APP_ID = import.meta.env.VITE_WORLD_APP_ID as `app_${string}` | undefined;
@@ -18,6 +18,12 @@ type Receipts = { mintTx?: string; setTermsTx?: string; attestationRef?: string 
 type SignedIn = { wallet: string; sessionNullifier: string; passport: Passport; terms: Terms; receipts?: Receipts };
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+
+// Demo display: an on-chain "N USDC" principal represents N × $150 of advance. Returns "$750 (5 USDC)".
+const fmtAdvance = (principal: string) => {
+  const usdc = parseFloat(principal) || 0;
+  return `$${(usdc * USD_PER_USDC).toLocaleString()} (${usdc} USDC)`;
+};
 
 /// A tx-hash / hash row that links to Arcscan on testnet (local hashes are shown but not linked).
 function Hashed({ label, value, isTx }: { label: string; value?: string; isTx?: boolean }) {
@@ -148,7 +154,7 @@ export function BorrowFlow() {
             <>
               <table className="terms">
                 <tbody>
-                  <tr><td>Approved</td><td>{cre.decision.principal || "—"}</td></tr>
+                  <tr><td>Approved</td><td>{cre.decision.principal ? fmtAdvance(cre.decision.principal) : "—"}</td></tr>
                   <tr><td>Risk band</td><td>{cre.decision.riskBand} · {cre.decision.tranche}</td></tr>
                 </tbody>
               </table>
@@ -156,12 +162,18 @@ export function BorrowFlow() {
                 {claim.pending ? "Claiming…" : claim.tx ? "Claimed ✓" : "Claim advance"}
               </button>
               {claim.tx && (
-                <p className="zk-verdict zk-verdict--ok" style={{ marginTop: 10 }}>
-                  ✓ Loan disbursed — {cre.decision.principal} sent to your managed wallet on Arc.{" "}
-                  {!IS_LOCAL && (
-                    <a className="tlink" href={`https://testnet.arcscan.app/tx/${claim.tx}`} target="_blank" rel="noreferrer">View on Arcscan ↗</a>
-                  )}
-                </p>
+                <div className="zk-verdict zk-verdict--ok" style={{ marginTop: 10 }}>
+                  <p style={{ margin: 0 }}>✓ Loan disbursed — <strong>{fmtAdvance(cre.decision.principal)}</strong> sent to your wallet on Arc.</p>
+                  <p className="muted" style={{ margin: "6px 0 0" }}>
+                    Wallet <code>{short(me.wallet)}</code>{" "}
+                    {!IS_LOCAL && (
+                      <>
+                        · <a className="tlink" href={`https://testnet.arcscan.app/address/${me.wallet}`} target="_blank" rel="noreferrer">view wallet (balance) ↗</a>
+                        {" "}· <a className="tlink" href={`https://testnet.arcscan.app/tx/${claim.tx}`} target="_blank" rel="noreferrer">disburse tx ↗</a>
+                      </>
+                    )}
+                  </p>
+                </div>
               )}
               {claim.error && <p className="error">{claim.error}</p>}
             </>

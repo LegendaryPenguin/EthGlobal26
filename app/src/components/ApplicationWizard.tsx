@@ -12,6 +12,11 @@ type Receipts = { setTermsTx?: string; attestationRef?: string };
 
 const THRESHOLD_YEARLY = Number(POLICY_THRESHOLD); // 12000
 
+// Demo representation: each on-chain USDC stands for this many "dollars" of advance. Lets the demo
+// show realistic advance sizes ($150–$3,000) while the actual on-chain principal stays tiny so it
+// fits the testnet USDC pool (e.g. a $3,000 advance disburses 20 USDC). On-chain amounts are real.
+export const USD_PER_USDC = 150;
+
 /// Friendly 3-step loan application. On "Apply for advance" it runs the REAL Noir/UltraHonk
 /// eligibility proof IN THE BACKGROUND over the income the user typed — income never leaves the
 /// device; only { proofHex, publicInputs } go to /api/world/apply, which verifies the proof BEFORE
@@ -26,7 +31,7 @@ export function ApplicationWizard({
   fallback?: { decision: CreDecision; receipts: Receipts };
 }) {
   const [step, setStep] = useState(0);
-  const [amount, setAmount] = useState(25);
+  const [amount, setAmount] = useState(USD_PER_USDC * 5); // $750 → 5 USDC on-chain
   const [income, setIncome] = useState(18000);
   const [age, setAge] = useState(25);
   const [country, setCountry] = useState("United States");
@@ -85,7 +90,7 @@ export function ApplicationWizard({
       const r = (await (await fetch("/api/world/apply", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sessionNullifier, requestedPrincipal: `${amount} USDC`, age, country, occupation,
+          sessionNullifier, requestedPrincipal: `${amount / USD_PER_USDC} USDC`, age, country, occupation,
           eligibility: { proofHex: proof.proofHex, publicInputs: proof.publicInputs },
         }),
       })).json()) as { ok: boolean; id?: string; error?: string; detail?: string };
@@ -162,11 +167,10 @@ export function ApplicationWizard({
       body: (
         <div>
           <div className="wiz-amount">${amount.toLocaleString()}</div>
-          {/* Demo amounts sized to the testnet USDC pool so claim() never reverts VaultUnderfunded.
-              Fund the LoanVault from faucet.circle.com to raise this range. */}
-          <input className="wiz-range" type="range" min={5} max={50} step={5}
+          <input className="wiz-range" type="range" min={USD_PER_USDC} max={USD_PER_USDC * 20} step={USD_PER_USDC}
             value={amount} onChange={(e) => setAmount(Number(e.target.value))} />
-          <div className="wiz-range-ends"><span>$5</span><span>$50</span></div>
+          <div className="wiz-range-ends"><span>${USD_PER_USDC}</span><span>${(USD_PER_USDC * 20).toLocaleString()}</span></div>
+          <p className="muted" style={{ marginTop: 6 }}>Settles on Arc as <strong>{amount / USD_PER_USDC} USDC</strong> <span className="muted">(demo rate ${USD_PER_USDC}/USDC)</span></p>
         </div>
       ),
     },
