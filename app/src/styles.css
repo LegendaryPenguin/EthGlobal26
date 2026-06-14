@@ -207,3 +207,15 @@ html.js .mark.rv.in { opacity: 1; transform: none; }
   * { animation: none !important; }
   html.js .rv, html.js .mark.rv { opacity: 1; transform: none; transition: none; }
 }
+
+/* application wizard */
+.wiz { margin-top: 14px; }
+.wiz-dots { display: flex; gap: 7px; margin-bottom: 14px; }
+.wiz-dot { width: 26px; height: 5px; border-radius: 999px; background: var(--line-2); }
+.wiz-dot--on { background: var(--coral); }
+.wiz-q { font-size: 1.3rem; font-weight: 700; letter-spacing: -0.01em; margin: 0; }
+.wiz-amount { font-family: "Shantell Sans", cursive; font-size: 2.6rem; color: var(--ink); text-align: center; margin: 6px 0; }
+.wiz-range { width: 100%; accent-color: var(--coral); }
+.wiz-range-ends { display: flex; justify-content: space-between; font-size: 12px; color: var(--faint); margin-top: 2px; }
+.wiz-spinner { width: 34px; height: 34px; margin: 6px 0 14px; border: 3px solid var(--line-2); border-top-color: var(--coral); border-radius: 50%; animation: wiz-spin 0.8s linear infinite; }
+@keyframes wiz-spin { to { transform: rotate(360deg); } }

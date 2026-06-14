@@ -2,6 +2,7 @@ import { useState } from "react";
 import { IDKitSessionWidget, CredentialRequest, type IDKitResultSession } from "@worldcoin/idkit";
 import { formatUnits } from "viem";
 import { useProveEligibility } from "../hooks/useProveEligibility";
+import { ApplicationWizard, type CreDecision } from "./ApplicationWizard";
 
 const APP_ID = import.meta.env.VITE_WORLD_APP_ID as `app_${string}` | undefined;
 const RPC = (import.meta.env.VITE_ARC_RPC_URL as string) || "";
@@ -118,6 +119,7 @@ export function BorrowFlow() {
   const [me, setMe] = useState<SignedIn | null>(null);
   const [error, setError] = useState<string>();
   const [claim, setClaim] = useState<{ pending: boolean; tx?: string; error?: string }>({ pending: false });
+  const [cre, setCre] = useState<{ decision: CreDecision; receipts: { setTermsTx?: string; attestationRef?: string } } | null>(null);
   const zk = useProveEligibility();
 
   if (!APP_ID) {
@@ -196,31 +198,39 @@ export function BorrowFlow() {
         </div>
         <div style={{ marginTop: 16 }}>
           <strong>Your advance</strong>
-          {me.terms.approved ? (
-            <table className="terms">
-              <tbody>
-                <tr><td>Principal</td><td>{formatUnits(BigInt(me.terms.principal), 6)} USDC</td></tr>
-                <tr><td>APR</td><td>{(me.terms.aprBps / 100).toFixed(2)}%</td></tr>
-              </tbody>
-            </table>
+          {!cre ? (
+            // Apply through the Chainlink CRE / Confidential AI — the real underwriting path.
+            <ApplicationWizard sessionNullifier={me.sessionNullifier} onDecided={(decision, receipts) => setCre({ decision, receipts })} />
+          ) : cre.decision.approved ? (
+            <>
+              <table className="terms">
+                <tbody>
+                  <tr><td>Approved</td><td>{cre.decision.principal || "—"}</td></tr>
+                  <tr><td>Risk band</td><td>{cre.decision.riskBand} · {cre.decision.tranche}</td></tr>
+                </tbody>
+              </table>
+              <button className="btn btn--primary" style={{ marginTop: 14 }} disabled={claim.pending || Boolean(claim.tx)} onClick={doClaim}>
+                {claim.pending ? "Claiming…" : claim.tx ? "Claimed ✓" : "Claim advance"}
+              </button>
+              {claim.error && <p className="error">{claim.error}</p>}
+            </>
           ) : (
-            <p className="muted">No approved terms yet.</p>
+            <p className="muted" style={{ marginTop: 10 }}>
+              Not approved this time{cre.decision.denialReason ? ` — ${cre.decision.denialReason}` : ""}.
+            </p>
           )}
-          <button className="btn btn--primary" style={{ marginTop: 14 }} disabled={!me.terms.approved || claim.pending || Boolean(claim.tx)} onClick={doClaim}>
-            {claim.pending ? "Claiming…" : claim.tx ? "Claimed ✓" : "Claim advance"}
-          </button>
-          {claim.error && <p className="error">{claim.error}</p>}
         </div>
 
-        {/* Phase 5 — demo state: the on-chain proof that this flow is real, not staged. */}
+        {/* Demo state: the on-chain proof that this flow is real, not staged. */}
         <div className="passport-card" style={{ marginTop: 16 }}>
           <strong>On-chain receipts</strong>
           <ul className="credit-report muted">
             <Hashed label="Passport id" value={p.id} />
             <Hashed label="Human nullifier" value={me.sessionNullifier} />
-            <Hashed label="Attestation ref" value={me.receipts?.attestationRef} />
+            <Hashed label="CRE inference id" value={cre?.decision.inferenceId} />
+            <Hashed label="Attestation ref" value={cre?.receipts.attestationRef ?? me.receipts?.attestationRef} />
             <Hashed label="Passport mint" value={me.receipts?.mintTx} isTx />
-            <Hashed label="Terms set (verdict)" value={me.receipts?.setTermsTx} isTx />
+            <Hashed label="Terms set (CRE verdict)" value={cre?.receipts.setTermsTx ?? me.receipts?.setTermsTx} isTx />
             <Hashed label="Claim / disburse" value={claim.tx} isTx />
           </ul>
           <p className="muted">

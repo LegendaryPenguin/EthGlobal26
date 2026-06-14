@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import { createRequire } from "node:module";
 import { createReadStream } from "node:fs";
 import path from "node:path";
-import { createSessionContextHandler, createSigninHandler, createClaimHandler } from "./server/verify";
+import { createSessionContextHandler, createSigninHandler, createClaimHandler, createApplyHandler, createDecisionHandler } from "./server/verify";
 
 const require = createRequire(import.meta.url);
 const IDKIT_WASM = path.join(path.dirname(require.resolve("@worldcoin/idkit-core")), "idkit_wasm_bg.wasm");
@@ -30,6 +30,8 @@ function worldId(env: Record<string, string>): Plugin {
       server.middlewares.use("/api/world/session-context", post(createSessionContextHandler(env)));
       server.middlewares.use("/api/world/signin", post(createSigninHandler(env)));
       server.middlewares.use("/api/world/claim", post(createClaimHandler(env)));
+      server.middlewares.use("/api/world/apply", post(createApplyHandler(env)));
+      server.middlewares.use("/api/world/decision", post(createDecisionHandler(env)));
     },
   };
 }
