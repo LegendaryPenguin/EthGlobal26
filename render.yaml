@@ -15,19 +15,37 @@ services:
     startCommand: npm run serve
     healthCheckPath: /
     envVars:
+      # Public config — all baked in so the only thing you set by hand is the 4 secrets below.
       - key: VITE_ARC_RPC_URL
         value: https://rpc.testnet.arc.network
       - key: VITE_WORLD_APP_ID
-        sync: false
+        value: app_6fb19072216f65cd0a85dbe4280a194f
       - key: VITE_WORLD_RP_ID
-        sync: false
+        value: rp_c6888ba7463eecd9
       - key: VITE_WORLD_ACTION_ID
         value: mint-credit-passport
+      - key: VITE_USDC_ADDRESS
+        value: "0x3600000000000000000000000000000000000000"
+      - key: VITE_LOAN_REGISTRY_ADDRESS
+        value: "0x07f7123461a5b1ca489587ae6fed6fada60b2331"
+      - key: VITE_LOAN_VAULT_ADDRESS
+        value: "0x201f032252ca717952b8e980d580717325a57f16"
+      - key: VITE_PASSPORT_REGISTRY_ADDRESS
+        value: "0xe9153228d7af221558685f6a70fe4f173cf2c7b0"
+      - key: VITE_TRANCHE_POOL_ADDRESS
+        value: "0x73bfc359df81c897ee7c04c778c2491ccb53f4d7"
+      - key: VITE_INCOME_ROUTER_ADDRESS
+        value: "0x54dc0d8d4aa50c6070cba758595e7f59957bf534"
       - key: VITE_RATE_ENGINE_ADDRESS
         value: "0x74D8d8BFBDcdDaf888e1f745f071afFB566919dB"
       - key: VITE_WALLET_LINK_ADDRESS
         value: "0x263999c1A58a37dc4554689Fa76eC4adc0429b0e"
-      # --- secrets: set these in the Render dashboard (sync:false = not stored in the repo) ---
+      # Behaviour flags (match the Vercel demo: ZK gate verified client-side, demo always approves).
+      - key: ZK_GATE_DISABLED
+        value: "1"
+      - key: DEMO_FORCE_APPROVE
+        value: "1"
+      # --- the ONLY 4 you set in the Render dashboard (copy from your Vercel env; sync:false = not in repo) ---
       - key: WORLD_RP_SIGNING_KEY
         sync: false
       - key: RELAYER_PRIVATE_KEY
