@@ -3,6 +3,7 @@ import { STAKING_PROVIDERS, PROVIDER_COLORS, VOUCH, TRANCHES } from "../data/moc
 import { Card, Pill } from "../components/ui";
 import { Chevron, FoxLogo } from "../components/Icons";
 import { VouchMark } from "../components/VouchMark";
+import { Reveal } from "../components/Reveal";
 
 function ProviderIcon({ kind }: { kind: "metamask" | "lido" | "rocket" }) {
   if (kind === "metamask") {
@@ -33,6 +34,7 @@ export function EarnList() {
       <div className="earn-section-label t-body-sm-medium text-alt">Featured</div>
 
       {/* Vouch — the real entry */}
+      <Reveal>
       <Card className="earn-row earn-row--feature" onClick={() => dispatch({ type: "step", step: "tranche" })}>
         <div className="earn-row__l">
           <VouchMark size={44} />
@@ -53,11 +55,13 @@ export function EarnList() {
           <Chevron dir="right" size={18} color="var(--color-text-alternative)" />
         </div>
       </Card>
+      </Reveal>
 
       <div className="earn-section-label t-body-sm-medium text-alt">Staking</div>
 
-      {STAKING_PROVIDERS.map((p) => (
-        <Card key={p.name} className={`earn-row ${p.live ? "" : "earn-row--muted"}`}>
+      {STAKING_PROVIDERS.map((p, i) => (
+        <Reveal key={p.name} delay={0.06 * (i + 1)}>
+        <Card className={`earn-row ${p.live ? "" : "earn-row--muted"}`}>
           <div className="earn-row__l">
             <ProviderIcon kind={p.kind} />
             <div className="earn-row__meta">
@@ -70,6 +74,7 @@ export function EarnList() {
             {p.live ? <Chevron dir="right" size={18} color="var(--color-text-alternative)" /> : <Pill tone="neutral">Coming soon</Pill>}
           </div>
         </Card>
+        </Reveal>
       ))}
 
       <p className="t-body-xs text-muted" style={{ marginTop: 16 }}>
